@@ -247,14 +247,14 @@
       <div class="head">
         <span>curl localhost:3000</span>
         <span class="req" aria-hidden="true">
-          <span>cwd <b>~/work/app</b></span>
-          <span>cwd <b>~/work/app-wt-a</b></span>
-          <span>cwd <b>~/work/app-wt-b</b></span>
+          <span>cwd <b>~/work/storefront</b></span>
+          <span>cwd <b>~/work/storefront-cart-fix</b></span>
+          <span>cwd <b>~/work/storefront-i18n</b></span>
         </span>
       </div>
-      <div class="route-row r1"><span class="dir">~/work/app</span><span class="addr"><b>127.77.60.193</b></span><span class="port">:3000</span></div>
-      <div class="route-row r2"><span class="dir">~/work/app-wt-a</span><span class="addr"><b>127.77.40.164</b></span><span class="port">:3000</span></div>
-      <div class="route-row r3"><span class="dir">~/work/app-wt-b</span><span class="addr"><b>127.77.201.7</b></span><span class="port">:3000</span></div>
+      <div class="route-row r1"><span class="dir">~/work/storefront</span><span class="addr"><b>127.77.60.193</b></span><span class="port">:3000</span></div>
+      <div class="route-row r2"><span class="dir">~/work/storefront-cart-fix</span><span class="addr"><b>127.77.40.164</b></span><span class="port">:3000</span></div>
+      <div class="route-row r3"><span class="dir">~/work/storefront-i18n</span><span class="addr"><b>127.77.201.7</b></span><span class="port">:3000</span></div>
       <div class="foot">same port, three servers — routed by the caller's working directory</div>
     </div>
   </div>
@@ -309,10 +309,10 @@ curl -fsSL https://wickedev.github.io/devhost/install.sh | sh</pre>
       <p class="lede">Browsers inherit the test runner's working directory — a
       Playwright Chromium in worktree A and one in worktree B both open
       <code class="mono">localhost:3000</code> and each reaches its own server.</p>
-      <pre class="term"><span class="c"># worktree A</span>                          <span class="c"># worktree B — at the same time</span>
+      <pre class="term"><span class="c"># ~/work/storefront</span>                  <span class="c"># ~/work/storefront-cart-fix — at the same time</span>
 $ npx playwright test                 $ npx playwright test
 <span class="a">webServer → 127.77.60.193:3000</span>       <span class="b">webServer → 127.77.40.164:3000</span>
-<span class="a">chromium  → localhost:3000 → A ✓</span>     <span class="b">chromium  → localhost:3000 → B ✓</span></pre>
+<span class="a">chromium  → localhost:3000 ✓</span>         <span class="b">chromium  → localhost:3000 ✓</span></pre>
     </div>
   </section>
 </main>

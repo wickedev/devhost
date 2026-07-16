@@ -6,10 +6,10 @@ ports at the same time. No `PORT=13001` workarounds, no dev servers killing
 each other, no code changes.
 
 ```
-~/work/app        → 127.77.60.193   → http://app.devhost:3000
-~/work/app-wt-a   → 127.77.40.164   → http://app-wt-a.devhost:3000  (same repo, worktree)
-~/work/app-wt-b   → 127.77.201.7    → http://app-wt-b.devhost:3000  (same repo, worktree)
-~/work/api        → 127.77.113.42   → http://api.devhost:8080, :9229, :5432 ...
+~/work/storefront           → 127.77.60.193   → http://storefront.devhost:3000
+~/work/storefront-cart-fix  → 127.77.40.164   → http://storefront-cart-fix.devhost:3000  (worktree)
+~/work/storefront-i18n      → 127.77.201.7    → http://storefront-i18n.devhost:3000      (worktree)
+~/work/api                  → 127.77.113.42   → http://api.devhost:8080, :9229, :5432 ...
 ```
 
 devhost virtualizes the **address**, not the port — `:3000` just makes the
@@ -53,12 +53,12 @@ go install github.com/wickedev/devhost/cmd/devhost@latest       # from source
 devhost setup            # installs shims, prints the PATH line to add
 
 # once per project
-cd ~/work/app && devhost init && git add .devhost
+cd ~/work/storefront && devhost init && git add .devhost
 
 # that's it — every port the project binds is virtualized
-npm run dev              # next dev  → http://app.devhost:3000
-                         # vite      → http://app.devhost:5173
-                         # storybook → http://app.devhost:6006
+npm run dev              # next dev  → http://storefront.devhost:3000
+                         # vite      → http://storefront.devhost:5173
+                         # storybook → http://storefront.devhost:6006
 ```
 
 Optional localhost routing daemon (launchd/systemd):
@@ -77,16 +77,16 @@ anything started inside a worktree resolves `localhost:<port>` to *that
 worktree's* server.
 
 ```sh
-# worktree A                        # worktree B — at the same time
+# ~/work/storefront                 # ~/work/storefront-cart-fix — at the same time
 npx playwright test                 npx playwright test
 #  webServer → 127.77.60.193:3000   #  webServer → 127.77.40.164:3000
-#  chromium  → localhost:3000 → A   #  chromium  → localhost:3000 → B
+#  chromium  → localhost:3000 ✓     #  chromium  → localhost:3000 ✓
 ```
 
 Full E2E suites in N worktrees at once; nothing collides, nothing gets
 killed. For clients whose working directory is *outside* the project — a
 browser opened from the Dock, a shared browser over CDP — use the stable
-name instead: `baseURL: "http://app.devhost:3000"`.
+name instead: `baseURL: "http://storefront.devhost:3000"`.
 
 ## Commands
 
