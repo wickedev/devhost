@@ -18,6 +18,7 @@ import (
 	"github.com/wickedev/devhost/internal/inject"
 	"github.com/wickedev/devhost/internal/interpose"
 	"github.com/wickedev/devhost/internal/netif"
+	"github.com/wickedev/devhost/internal/privhelper"
 	"github.com/wickedev/devhost/internal/project"
 	"github.com/wickedev/devhost/internal/selfupdate"
 	"github.com/wickedev/devhost/internal/shim"
@@ -161,6 +162,11 @@ func cmdShimExec(args []string) error {
 }
 
 func cmdSetup(args []string) error {
+	for _, a := range args {
+		if a == "--helper" {
+			return privhelper.Install()
+		}
+	}
 	dir, installed, err := shim.Install(shim.DefaultTools)
 	if err != nil {
 		return err
@@ -177,6 +183,10 @@ func cmdSetup(args []string) error {
 	fmt.Printf("\n  export PATH=\"%s:$PATH\"\n\n", dir)
 	fmt.Println("Optional — localhost routing (`curl localhost:3000` inside a workspace):")
 	fmt.Println("  run `devhost daemon` under your service manager (launchd/systemd)")
+	if !privhelper.Installed() {
+		fmt.Println("\nRecommended — a narrow root helper instead of broad sudo:")
+		fmt.Println("  devhost setup --helper   (one-time password prompt)")
+	}
 	return nil
 }
 
@@ -234,6 +244,14 @@ func cmdDoctor(args []string) error {
 		report(false, "bind() interposer", err.Error())
 	} else {
 		report(true, "bind() interposer ("+lib+")", "")
+	}
+
+	if privhelper.Installed() {
+		report(true, "privileged helper ("+privhelper.Path+")", "")
+	} else if exec.Command("sudo", "-n", "true").Run() == nil {
+		fmt.Println("- privileged helper not installed (passwordless sudo covers it; `devhost setup --helper` to narrow)")
+	} else {
+		report(false, "privileged helper", "run `devhost setup --helper` — without it, lo0 aliases and .devhost hostnames can't be registered")
 	}
 
 	cwd, _ := os.Getwd()

@@ -104,6 +104,27 @@ name instead: `baseURL: "http://storefront.devhost:3000"`.
 | `devhost doctor` | diagnose the installation (also mentions when an update is available) |
 | `devhost upgrade` | update devhost to the latest release |
 
+## Privilege
+
+macOS needs root for two things: `lo0` aliases and (until the DNS responder
+lands) `/etc/hosts` entries. Instead of asking for broad sudo, install the
+**narrow helper** once:
+
+```sh
+devhost setup --helper   # one-time password prompt
+```
+
+This installs a ~60-line validating shell script, root-owned at
+`/usr/local/libexec/devhost-helper`, plus a single sudoers line allowing
+exactly it — [audit the whole trust surface here](internal/privhelper/assets/devhost-helper.sh).
+It refuses anything outside `127.77.0.0/16`, malformed hostnames, and
+newline/comment injection. Uninstall:
+`sudo rm /usr/local/libexec/devhost-helper /etc/sudoers.d/devhost`.
+
+Without the helper, devhost falls back to passwordless sudo if present, and
+degrades gracefully (direct-IP access still works) if not. Linux needs no
+privilege for IPs at all — `127/8` routes natively.
+
 ## Platform notes
 
 | | macOS | Linux |
@@ -125,7 +146,6 @@ Windows has no preload primitive; use WSL2, where the Linux path works as-is.
 
 ## Roadmap
 
-- [ ] Privileged helper + narrow sudoers install (`devhost setup --helper`)
 - [ ] Built-in DNS responder + `/etc/resolver/devhost` (stop touching `/etc/hosts`)
 - [ ] `devhost exec` port-watch proxy (covers hardened/static binaries without injection)
 - [ ] Linux eBPF backend: `cgroup/bind4` rewrite — kernel-level, catches

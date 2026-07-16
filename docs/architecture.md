@@ -115,7 +115,17 @@ without it.
 ## Privilege model
 
 macOS needs root twice: `lo0` aliases and (until the DNS responder lands)
-`/etc/hosts`. The supported path is a ~20-line root-owned helper that
-validates its argument against `127.77.0.0/16` and runs `ifconfig`, allowed
-by a single narrow NOPASSWD sudoers line — auditable in one screenful.
-Plain passwordless sudo works as a fallback. Linux needs no privilege at all.
+`/etc/hosts`. The supported path is `devhost setup --helper`: a short
+root-owned validating shell script (`/usr/local/libexec/devhost-helper`,
+auditable in one screenful) allowed by a single NOPASSWD sudoers line that
+names exactly it. The helper accepts two verbs — `alias <ip>` and
+`hosts <ip> <name> <root>` — validates every field (IP must be inside
+`127.77.0.0/16`, the hostname must be one DNS label, the root path may not
+contain control characters, `#`, or backslashes, and embedded newlines are
+refused everywhere since per-line regex matching would otherwise let a
+second line through), and composes the `/etc/hosts` line itself so callers
+can never write arbitrary content. The sudoers file is checked with
+`visudo -cf` before install — a malformed sudoers file can lock sudo up.
+Plain passwordless sudo works as a fallback; without either, hostname
+registration degrades and direct-IP access keeps working. Linux needs no
+privilege for IPs at all.

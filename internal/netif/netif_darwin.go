@@ -8,12 +8,9 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-)
 
-// helper is the root-owned privileged helper installed by `devhost setup
-// --helper`. It validates its argument against the devhost range and runs
-// ifconfig, so a narrow NOPASSWD sudoers rule for it is safe.
-const helper = "/usr/local/libexec/devhost-alias"
+	"github.com/wickedev/devhost/internal/privhelper"
+)
 
 // HasAlias reports whether lo0 already carries ip.
 func HasAlias(ip string) bool {
@@ -33,7 +30,7 @@ func EnsureAlias(ip string) error {
 		return nil
 	}
 	attempts := [][]string{
-		{"sudo", "-n", helper, ip},
+		{"sudo", "-n", privhelper.Path, "alias", ip},
 		{"sudo", "-n", "/sbin/ifconfig", "lo0", "alias", ip, "up"},
 	}
 	for _, a := range attempts {

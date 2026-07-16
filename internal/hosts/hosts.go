@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/wickedev/devhost/internal/privhelper"
 )
 
 const (
@@ -80,11 +82,16 @@ func Ensure(ip, name, root string) error {
 	if !changed {
 		return nil
 	}
+	// Preferred path: the narrow privileged helper composes and swaps the
+	// line itself (validating every field), so no broad sudo is needed.
+	if exec.Command("sudo", "-n", privhelper.Path, "hosts", ip, name, root).Run() == nil && Has(ip, name) {
+		return nil
+	}
 	cmd := exec.Command("sudo", "-n", "tee", file)
 	cmd.Stdin = strings.NewReader(strings.Join(kept, "\n") + "\n")
 	cmd.Stdout = io.Discard
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("could not update %s (needs passwordless sudo or the privileged helper): %w", file, err)
+		return fmt.Errorf("could not update %s — install the privileged helper (devhost setup --helper): %w", file, err)
 	}
 	return nil
 }
