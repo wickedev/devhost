@@ -1,5 +1,10 @@
 # devhost
 
+[![skills.sh](https://img.shields.io/badge/skills.sh-devhost-black?logo=vercel&logoColor=white)](https://skills.sh/wickedev/devhost)
+[![Release](https://img.shields.io/github/v/release/wickedev/devhost?color=e8590c)](https://github.com/wickedev/devhost/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/wickedev/devhost/ci.yml?branch=main&label=ci)](https://github.com/wickedev/devhost/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 **Per-directory port virtualization for dev servers.** Every project — and
 every git worktree — gets its own loopback IP, so they can all bind the same
 ports at the same time. No `PORT=13001` workarounds, no dev servers killing
