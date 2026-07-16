@@ -82,13 +82,15 @@
   .nav a { text-decoration: none; font-size: 14px; color: var(--muted); }
   .nav a:hover, .nav a:focus-visible { color: var(--ink); }
   .nav nav { display: flex; gap: 22px; align-items: center; }
+  /* symmetric padding: icon-only (zero stars) renders as a clean circle,
+     the count adds its own trailing breathing room when present */
   .gh {
     display: inline-flex; align-items: center; gap: 7px;
-    border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px 5px 9px;
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px;
   }
   .gh:hover, .gh:focus-visible { border-color: var(--ink); }
   .gh svg { width: 17px; height: 17px; fill: currentColor; display: block; }
-  .gh .stars { font-family: var(--mono); font-size: 12.5px; line-height: 1; }
+  .gh .stars { font-family: var(--mono); font-size: 12.5px; line-height: 1; margin-right: 5px; }
   .gh .stars:empty { display: none; }
 
   /* hero */
