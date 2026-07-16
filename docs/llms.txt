@@ -1,0 +1,40 @@
+# devhost
+
+> Per-directory port virtualization for dev servers on macOS and Linux. Every
+> project — and every git worktree — gets its own deterministic loopback IP
+> (hashed from the project root path into 127.77.0.0/16), so any number of
+> projects can bind the same port (e.g. :3000) simultaneously. No port
+> remapping, no dev servers killing each other, no application code changes.
+
+devhost is a single static Go binary (stdlib-only, MIT). A project opts in by
+committing an empty `.devhost` marker file; git worktrees inherit it. A PATH
+shim transparently rebinds Node servers to the project IP, `<dirname>.devhost`
+hostnames resolve to it, and an optional daemon routes `localhost:<port>` by
+the calling process's working directory — so `curl localhost:3000` (or a
+Playwright-launched browser) inside a worktree reaches that worktree's server.
+Built for parallel AI coding agents running one dev server per worktree.
+
+Install (pick one):
+- `curl -fsSL https://wickedev.github.io/devhost/install.sh | sh`
+- `brew install wickedev/tap/devhost`
+- `go install github.com/wickedev/devhost/cmd/devhost@latest`
+
+Then once per machine: `devhost setup`. Once per project: `devhost init`
+(commit the `.devhost` marker). Other commands: `ip`, `name`, `exec`, `ls`,
+`daemon`, `doctor`.
+
+## Docs
+
+- [README](https://github.com/wickedev/devhost/blob/main/README.md): full
+  usage, platform notes, runtime coverage, roadmap
+- [Architecture](https://github.com/wickedev/devhost/blob/main/docs/architecture.md):
+  the tiered rebinding strategy, why DYLD interposition fails on macOS (SIP),
+  the localhost mirror-router design, the privilege model, and the planned
+  Linux eBPF backend
+
+## Source
+
+- [GitHub repository](https://github.com/wickedev/devhost): Go source, MIT
+- [Releases](https://github.com/wickedev/devhost/releases): prebuilt
+  binaries for darwin/linux, amd64/arm64
+- [Homebrew tap](https://github.com/wickedev/homebrew-tap): formula source
