@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -15,6 +16,7 @@ import (
 	"github.com/wickedev/devhost/internal/daemon"
 	"github.com/wickedev/devhost/internal/hosts"
 	"github.com/wickedev/devhost/internal/inject"
+	"github.com/wickedev/devhost/internal/interpose"
 	"github.com/wickedev/devhost/internal/netif"
 	"github.com/wickedev/devhost/internal/project"
 	"github.com/wickedev/devhost/internal/selfupdate"
@@ -147,17 +149,29 @@ func cmdShimExec(args []string) error {
 				fmt.Fprintf(os.Stderr, "devhost: warning: %v\n", err)
 			}
 			env = inject.Env(env, root)
+			if runtime.GOOS == "darwin" {
+				// A version-manager shim script between us and the runtime
+				// would strip DYLD_* at its /bin/bash hop — exec the real
+				// binary instead. Only needed inside a project.
+				real = shim.ResolveThroughManagers(real, tool)
+			}
 		}
 	}
 	return syscall.Exec(real, append([]string{tool}, rest...), env)
 }
 
 func cmdSetup(args []string) error {
-	dir, err := shim.Install(shim.DefaultTools)
+	dir, installed, err := shim.Install(shim.DefaultTools)
 	if err != nil {
 		return err
 	}
-	fmt.Println("installed shims:", dir)
+	fmt.Printf("installed shims: %s (%s)\n", dir, strings.Join(installed, ", "))
+	if lib, err := interpose.Ensure(); err != nil {
+		fmt.Printf("bind() interposer skipped: %v\n", err)
+		fmt.Println("  (Node keeps working via NODE_OPTIONS; other runtimes need HOST)")
+	} else {
+		fmt.Println("compiled bind() interposer:", lib)
+	}
 	fmt.Println("\nAdd to your shell profile, AFTER any version manager init")
 	fmt.Println("(the shim must win the PATH race, then hand off to it):")
 	fmt.Printf("\n  export PATH=\"%s:$PATH\"\n\n", dir)
@@ -215,6 +229,12 @@ func cmdDoctor(args []string) error {
 		}
 	}
 	report(onPath, "shim dir on PATH ("+shimDir+")", "run `devhost setup` and add the printed export line")
+
+	if lib, err := interpose.Ensure(); err != nil {
+		report(false, "bind() interposer", err.Error())
+	} else {
+		report(true, "bind() interposer ("+lib+")", "")
+	}
 
 	cwd, _ := os.Getwd()
 	root := project.FindRoot(cwd)

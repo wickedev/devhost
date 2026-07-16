@@ -31,23 +31,37 @@ each engaging only when the one above it can't:
 
 | Tier | Mechanism | Covers |
 |---|---|---|
-| 1 | runtime injection (Node `NODE_OPTIONS --require`; Python/Ruby planned) | anything on an injectable runtime, zero config |
-| 2 | `HOST`/`PORT` convention env | 12-factor style servers (Go, Rust, ...) |
-| 3 | `devhost exec` supervised port-watch + reverse proxy (planned) | arbitrary binaries |
+| 1 | `bind()` interposer (`DYLD_INSERT_LIBRARIES` / `LD_PRELOAD`), self-computing | every dynamically-linked runtime — Node, Python, Ruby, JVM; Go too on macOS |
+| 1b | Node `NODE_OPTIONS --require` listen patch | hardened Node builds that refuse injection |
+| 2 | `HOST`/`PORT` convention env | static/hardened binaries reading 12-factor config |
+| 3 | `devhost exec` supervised port-watch + reverse proxy (planned) | arbitrary binaries, no injection at all |
 | 4 | Linux eBPF `cgroup/bind4` rewrite (planned) | everything, kernel-level |
 
-### Why not DYLD interposition on macOS
+### The interposer, and how the shim resurrects DYLD
 
-A `bind()`-interposing dylib via `DYLD_INSERT_LIBRARIES` would be Tier-1 for
-*all* runtimes — but macOS SIP strips `DYLD_*` variables from the environment
-whenever a protected binary (`/bin/sh`, `/usr/bin/env`) execs, and every npm
-script chain crosses both. The variable silently disappears mid-chain.
+A `bind()`-interposing library is the universal answer: every runtime's
+socket call funnels through libc, so one small C file covers Node, Python,
+Ruby, the JVM — and on macOS even Go, which links libSystem dynamically. The
+library is self-contained: it computes the project IP itself (cwd → nearest
+`.devhost` → md5, the same scheme as `internal/addr`), so the data path
+carries no HOST/PORT/DEVHOST at all, and outside a marked tree it is a
+strict no-op.
 
-devhost's answer is the **PATH shim** (asdf's mechanism): a tiny script in
-front of `node` that delegates to `devhost shim-exec`, which applies plain
-env vars **at the final exec** — after every SIP-protected hop — and hands
-off to the real launcher (preserving asdf/mise semantics). Ordinary env vars
-survive any exec chain; only the injection *timing* had to move.
+The classic objection is SIP: macOS strips `DYLD_*` variables whenever a
+protected binary (`/bin/sh`, `/usr/bin/env`) execs, and every npm script
+chain crosses both. The **PATH shim** (asdf's mechanism) dissolves it: a tiny
+script in front of each runtime launcher delegates to `devhost shim-exec`,
+which applies the variable **at the final exec** — after every SIP-protected
+hop — and executes the real Mach-O binary directly (following asdf/mise shim
+scripts to their target, since a bash hop there would strip the variable
+again). On Linux there is nothing to resurrect: `LD_PRELOAD` survives shell
+chains, and `/etc/ld.so.preload` can load the interposer with zero
+environment variables anywhere.
+
+Honest limits: binaries signed with hardened runtime + library validation
+refuse injection (rare for brew/asdf/mise-installed dev tooling); Go on
+*Linux* makes raw syscalls past libc (the eBPF tier closes this); IPv6
+wildcard binds pass through. Those cases fall to tiers 1b/2/3.
 
 Below the shim, macOS offers nothing: pf can't fix `EADDRINUSE` (the
 collision happens at the syscall, before any packet exists), Network

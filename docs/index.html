@@ -339,7 +339,7 @@
       <div class="steps">
         <div class="step"><h3>Marker</h3><p>An empty <code>.devhost</code> file opts a tree in. Commit it; git worktrees inherit it.</p></div>
         <div class="step"><h3>Deterministic IP</h3><p>The root path hashes into <code>127.77.0.0/16</code>. Same path, same IP — no registry, no coordination.</p></div>
-        <div class="step"><h3>Transparent rebinding</h3><p>A PATH shim injects a tiny listen patch, so <code>next dev</code> or plain Node binds the project IP untouched.</p></div>
+        <div class="step"><h3>Transparent rebinding</h3><p>A PATH shim loads a tiny <code>bind()</code> interposer, so <code>next dev</code>, <code>flask run</code>, <code>rails s</code> bind the project IP untouched.</p></div>
         <div class="step"><h3>Stable names</h3><p><code>&lt;dirname&gt;.devhost</code> resolves to the project IP — a browser URL that never changes.</p></div>
         <div class="step"><h3>localhost, restored</h3><p>The daemon routes <code>localhost:3000</code> by the caller's cwd — each worktree reaches its own server.</p></div>
       </div>

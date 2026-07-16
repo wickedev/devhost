@@ -27,12 +27,14 @@ per worktree, fixed ports stop being a convention and start being a fight.
    Same path → same IP, different worktree → different IP. On macOS the IP is
    auto-registered as an `lo0` alias; on Linux all of `127.0.0.0/8` already
    routes.
-3. **Transparent rebinding.** A PATH shim (asdf-style) wraps `node`. Inside a
-   `.devhost` tree it injects a tiny `net.Server.listen` patch via
-   `NODE_OPTIONS`, so `next dev`, `vite`, plain `http.createServer(...)
-   .listen(3000)` — anything — binds the project IP instead of
-   `0.0.0.0`/`localhost`. Zero project configuration. Outside a marked tree
-   the shim is a pass-through.
+3. **Transparent rebinding.** A PATH shim (asdf-style) wraps runtime
+   launchers (`node`, `python3`, `ruby`, ...). Inside a `.devhost` tree it
+   loads a tiny `bind()` interposer at the final exec, so `next dev`,
+   `flask run`, `rails s` — anything on a dynamically-linked runtime — binds
+   the project IP instead of `0.0.0.0`/`localhost`. The interposer computes
+   the IP itself from the process's working directory: no HOST, no PORT, no
+   app config. Zero project configuration. Outside a marked tree the shim is
+   a pass-through.
 4. **Names.** `<dirname>.devhost` resolves to the project IP, so the browser
    URL is stable and human.
 5. **`localhost` still works.** Because real servers moved to `127.77.*`,
@@ -107,25 +109,30 @@ name instead: `baseURL: "http://storefront.devhost:3000"`.
 | | macOS | Linux |
 |---|---|---|
 | loopback IPs | `lo0` alias per IP (needs one-time privileged helper or passwordless sudo) | free — `127/8` routes by default |
-| transparent rebinding | PATH shim + env injection (SIP rules out `DYLD_*`; see [docs/architecture.md](docs/architecture.md)) | same, until the eBPF backend lands |
+| transparent rebinding | `bind()` interposer via `DYLD_INSERT_LIBRARIES`, applied by the shim at the final exec (see [docs/architecture.md](docs/architecture.md)) | same via `LD_PRELOAD` |
 | `localhost` routing | caller lookup via `lsof` | unique-candidate fallback (eBPF backend planned) |
 
-**Runtime coverage.** The injection tier covers Node today (and everything
-with a `#!/usr/bin/env node` shebang: npm, npx, next, vite...). Python and
-Ruby adapters are planned. Runtimes with no injection channel (Go, Rust,
-Deno) follow the `HOST`/`PORT` convention that `devhost exec` provides, until
-the supervised port-watch proxy lands.
+**Runtime coverage.** The `bind()` interposer covers every dynamically-linked
+runtime — Node, Python, Ruby, the JVM, and (on macOS) even Go binaries, since
+darwin routes syscalls through libSystem. Node additionally gets a
+`NODE_OPTIONS` listen patch as belt-and-braces. Known gaps, stated plainly:
+binaries signed with the hardened runtime + library validation refuse
+injection (rare for dev tooling installed via brew/asdf/mise), static
+binaries on **Linux** bypass libc entirely (Go — the planned eBPF backend
+closes this), and IPv6 wildcard binds pass through unrewritten. In all those
+cases the `HOST`/`PORT` convention env that `devhost exec` sets still applies.
+Windows has no preload primitive; use WSL2, where the Linux path works as-is.
 
 ## Roadmap
 
 - [ ] Privileged helper + narrow sudoers install (`devhost setup --helper`)
 - [ ] Built-in DNS responder + `/etc/resolver/devhost` (stop touching `/etc/hosts`)
-- [ ] `devhost exec` port-watch proxy (universal, runtime-agnostic tier)
-- [ ] Python / Ruby injection adapters
+- [ ] `devhost exec` port-watch proxy (covers hardened/static binaries without injection)
 - [ ] Linux eBPF backend: `cgroup/bind4` rewrite — kernel-level, catches
       everything including static Go binaries
+- [ ] `/etc/ld.so.preload` opt-in on Linux (interposer with zero env vars anywhere)
+- [ ] IPv6 wildcard rewriting in the interposer
 - [ ] libproc-based caller lookup on macOS (sub-ms, replaces `lsof`)
-- [ ] Homebrew tap
 
 ## License
 

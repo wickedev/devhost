@@ -1,8 +1,9 @@
 // Package inject builds the environment that activates devhost for a project:
-// the DEVHOST/HOST convention variables plus per-runtime injection channels
-// (currently Node via NODE_OPTIONS). Injection channels are plain environment
-// variables on purpose — macOS SIP strips DYLD_* across /bin/sh and
-// /usr/bin/env hops, but ordinary variables survive any exec chain.
+// the DEVHOST/HOST convention variables, the Node NODE_OPTIONS channel, and
+// the universal bind() interposer via DYLD_INSERT_LIBRARIES / LD_PRELOAD.
+// SIP-stripped variables (DYLD_*) are safe here because Env is applied by
+// `devhost shim-exec` at the FINAL exec — past every /bin/sh and
+// /usr/bin/env hop a script chain can throw at it.
 package inject
 
 import (
@@ -12,16 +13,15 @@ import (
 	"strings"
 
 	"github.com/wickedev/devhost/internal/addr"
+	"github.com/wickedev/devhost/internal/config"
+	"github.com/wickedev/devhost/internal/interpose"
 )
 
 //go:embed assets/node-inject.cjs
 var nodeInjector []byte
 
 // ConfigDir is where devhost keeps its runtime assets and shims.
-func ConfigDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "devhost")
-}
+func ConfigDir() string { return config.Dir() }
 
 // EnsureInjector writes the embedded Node injector to the config dir if it
 // is missing or stale, and returns its path. Self-healing: every activation
@@ -48,6 +48,11 @@ func Env(base []string, root string) []string {
 	if p, err := EnsureInjector(); err == nil {
 		env = appendNodeOptions(env, "--require "+p)
 	}
+	// Universal tier: the bind() interposer covers every dynamically-linked
+	// runtime. Missing compiler just skips this tier; doctor surfaces it.
+	if lib, err := interpose.Ensure(); err == nil {
+		env = appendPathList(env, interpose.EnvVar(), lib)
+	}
 	return env
 }
 
@@ -60,6 +65,21 @@ func setVar(env []string, key, val string) []string {
 		}
 	}
 	return append(env, prefix+val)
+}
+
+// appendPathList adds entry to a colon-separated list variable, idempotently.
+func appendPathList(env []string, key, entry string) []string {
+	prefix := key + "="
+	for i, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			if strings.Contains(kv, entry) {
+				return env
+			}
+			env[i] = kv + ":" + entry
+			return env
+		}
+	}
+	return append(env, prefix+entry)
 }
 
 func appendNodeOptions(env []string, opt string) []string {
