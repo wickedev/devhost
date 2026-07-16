@@ -35,7 +35,7 @@ each engaging only when the one above it can't:
 | 1b | Node `NODE_OPTIONS --require` listen patch | hardened Node builds that refuse injection |
 | 2 | `HOST`/`PORT` convention env | static/hardened binaries reading 12-factor config |
 | 3 | `devhost exec` supervised port-watch + reverse proxy (planned) | arbitrary binaries, no injection at all |
-| 4 | Linux eBPF `cgroup/bind4` rewrite (planned) | everything, kernel-level |
+| 4 | Linux eBPF `cgroup/bind4` rewrite (opt-in, needs privilege) | everything, kernel-level — including static Go binaries |
 
 ### The interposer, and how the shim resurrects DYLD
 
@@ -68,15 +68,29 @@ collision happens at the syscall, before any packet exists), Network
 Extensions intercept the outbound side only, kexts are gone. The shim is the
 practical floor; past it lies a Linux VM.
 
-### The Linux endgame
+### The Linux endgame (implemented)
 
 Linux has the kernel primitive macOS lacks: an eBPF program attached to a
-cgroup (`BPF_CGROUP_INET4_BIND`) can rewrite bind addresses in-kernel. Pair
-it with a shell hook that migrates the shell into a per-project cgroup on
-`cd`, and every descendant process — including static Go binaries that
-bypass libc — is virtualized with no env vars in the data path. This is the
-planned `devhostd` Linux backend; `connect4` gives localhost routing for
-free at the same layer.
+cgroup (`BPF_CGROUP_INET4_BIND`) rewrites bind addresses in-kernel, below
+libc — so it catches even static Go binaries that issue raw syscalls, the one
+runtime the `LD_PRELOAD` interposer misses. `devhost exec` implements this:
+when it has privilege (`CAP_BPF` + `CAP_NET_ADMIN`) and a writable cgroup2, it
+loads a bind4 program carrying the project IP, attaches it to a per-project
+cgroup under `/sys/fs/cgroup/devhost/`, and moves itself in before exec so the
+server and all its children are governed. The program only rewrites
+wildcard/loopback binds, matching the interposer's policy.
+
+The whole loader is pure Go — hand-assembled BPF instructions and raw `bpf(2)`
+syscalls, no cgo and no dependency. Two things bit us and are worth recording:
+`BPF_PROG_TYPE_CGROUP_SOCK_ADDR` is 18 (17 is `RAW_TRACEPOINT`, whose context
+has no `user_ip4`), and the `bpf_attr` passed to `BPF_PROG_LOAD` must be the
+full 144 bytes — a shorter buffer truncates `expected_attach_type`, and the
+verifier then rejects the write to `user_ip4` as an invalid context access.
+Both were found by diffing against a C loader built from the kernel headers.
+
+It's opt-in by privilege, not the default: unprivileged runs skip it and rely
+on the interposer. A `connect4` hook could give localhost routing at the same
+layer; not yet implemented (the lsof/registry daemon covers it today).
 
 ## Addressing
 

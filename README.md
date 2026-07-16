@@ -138,25 +138,30 @@ routes natively; hostname resolution there stays on `/etc/hosts` for now.
 | | macOS | Linux |
 |---|---|---|
 | loopback IPs | `lo0` alias per IP (needs one-time privileged helper or passwordless sudo) | free — `127/8` routes by default |
-| transparent rebinding | `bind()` interposer via `DYLD_INSERT_LIBRARIES`, applied by the shim at the final exec (see [docs/architecture.md](docs/architecture.md)) | same via `LD_PRELOAD` |
-| `localhost` routing | caller lookup via `lsof` | unique-candidate fallback (eBPF backend planned) |
+| transparent rebinding | `bind()` interposer via `DYLD_INSERT_LIBRARIES`, applied by the shim at the final exec (see [docs/architecture.md](docs/architecture.md)) | `LD_PRELOAD` interposer, plus an optional eBPF kernel backend |
+| `localhost` routing | caller lookup via `lsof` | unique-candidate fallback |
 
 **Runtime coverage.** The `bind()` interposer covers every dynamically-linked
 runtime — Node, Python, Ruby, the JVM, and (on macOS) even Go binaries, since
 darwin routes syscalls through libSystem. Node additionally gets a
 `NODE_OPTIONS` listen patch as belt-and-braces. Known gaps, stated plainly:
 binaries signed with the hardened runtime + library validation refuse
-injection (rare for dev tooling installed via brew/asdf/mise), static
-binaries on **Linux** bypass libc entirely (Go — the planned eBPF backend
-closes this), and IPv6 wildcard binds pass through unrewritten. In all those
-cases the `HOST`/`PORT` convention env that `devhost exec` sets still applies.
+injection (rare for dev tooling installed via brew/asdf/mise), and IPv6
+wildcard binds pass through unrewritten.
+
+On **Linux**, static binaries that issue raw syscalls past libc (Go) slip the
+`LD_PRELOAD` interposer — so `devhost exec` also attaches a kernel-level
+**eBPF `cgroup/bind4`** program when it can (root / `CAP_BPF` + `CAP_NET_ADMIN`
+and a writable cgroup2). That rewrites bind at the syscall boundary, catching
+everything including static Go servers. It's opt-in by privilege: without it,
+dynamically-linked runtimes still work via the interposer, and anything else
+falls back to the `HOST`/`PORT` convention env.
+
 Windows has no preload primitive; use WSL2, where the Linux path works as-is.
 
 ## Roadmap
 
-- [ ] `devhost exec` port-watch proxy (covers hardened/static binaries without injection)
-- [ ] Linux eBPF backend: `cgroup/bind4` rewrite — kernel-level, catches
-      everything including static Go binaries
+- [ ] `devhost exec` port-watch proxy (covers hardened macOS binaries without injection)
 - [ ] `/etc/ld.so.preload` opt-in on Linux (interposer with zero env vars anywhere)
 - [ ] IPv6 wildcard rewriting in the interposer
 - [ ] libproc-based caller lookup on macOS (sub-ms, replaces `lsof`)

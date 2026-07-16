@@ -17,6 +17,7 @@ import (
 	"github.com/wickedev/devhost/internal/addr"
 	"github.com/wickedev/devhost/internal/daemon"
 	"github.com/wickedev/devhost/internal/dnsserver"
+	"github.com/wickedev/devhost/internal/ebpf"
 	"github.com/wickedev/devhost/internal/hosts"
 	"github.com/wickedev/devhost/internal/inject"
 	"github.com/wickedev/devhost/internal/interpose"
@@ -124,6 +125,7 @@ func cmdExec(args []string) error {
 				log.Printf("warning: %v", err)
 			}
 			env = inject.Env(env, root)
+			applyEBPF(root) // Linux kernel tier; children inherit the cgroup
 		}
 	}
 	path, err := exec.LookPath(args[0])
@@ -163,6 +165,7 @@ func cmdShimExec(args []string) error {
 				fmt.Fprintf(os.Stderr, "devhost: warning: %v\n", err)
 			}
 			env = inject.Env(env, root)
+			applyEBPF(root) // Linux kernel tier; the exec'd process stays in the cgroup
 			if runtime.GOOS == "darwin" {
 				// A version-manager shim script between us and the runtime
 				// would strip DYLD_* at its /bin/bash hop — exec the real
@@ -233,6 +236,24 @@ func cmdLs(args []string) error {
 	return nil
 }
 
+// applyEBPF, on Linux with privilege, attaches the kernel-level bind4 rewrite
+// to a per-project cgroup and moves this process into it so the server (and
+// its children) are governed by it — covering static binaries the interposer
+// can't. A no-op without privilege or off Linux; the interposer still applies.
+func applyEBPF(root string) {
+	if !ebpf.Available() {
+		return
+	}
+	cg, err := ebpf.Activate(addr.ForDir(root))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "devhost: ebpf: %v (falling back to the interposer)\n", err)
+		return
+	}
+	if err := ebpf.JoinCgroup(cg, os.Getpid()); err != nil {
+		fmt.Fprintf(os.Stderr, "devhost: ebpf: joining cgroup: %v\n", err)
+	}
+}
+
 // dnsResponderAlive probes the local responder for a known registered name.
 func dnsResponderAlive() bool {
 	entries := registry.All()
@@ -290,6 +311,14 @@ func cmdDoctor(args []string) error {
 		report(false, "bind() interposer", err.Error())
 	} else {
 		report(true, "bind() interposer ("+lib+")", "")
+	}
+
+	if runtime.GOOS == "linux" {
+		if ebpf.Available() {
+			report(true, "eBPF bind4 backend (kernel-level, catches static binaries)", "")
+		} else {
+			fmt.Println("- eBPF backend unavailable (needs root/CAP_BPF + writable cgroup2; the interposer covers dynamic runtimes)")
+		}
 	}
 
 	if privhelper.Installed() {
