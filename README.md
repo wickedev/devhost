@@ -181,23 +181,6 @@ environment at all.
 
 Windows has no preload primitive; use WSL2, where the Linux path works as-is.
 
-## Roadmap
-
-The core is complete — every tier below is implemented and tested:
-
-- [x] Deterministic per-directory IPs, `.devhost` marker, PATH shims
-- [x] Universal `bind()` interposer (macOS DYLD / Linux LD_PRELOAD), IPv4 + IPv6
-- [x] `localhost` mirror-router with cwd-based caller routing (in-process libproc on macOS)
-- [x] Built-in DNS responder + `/etc/resolver/devhost` (no `/etc/hosts` writes)
-- [x] Narrow privileged helper (`devhost setup --helper`)
-- [x] Linux eBPF `cgroup/bind4`+`bind6` backend for static binaries
-- [x] `/etc/ld.so.preload` opt-in (env-free rebinding, Linux)
-- [x] `devhost exec --proxy` for un-injectable binaries
-- [x] `devhost upgrade` self-update + automated goreleaser releases
-
-Possible future work: a `connect4` eBPF hook for localhost routing on Linux,
-and native Windows support beyond WSL2.
-
 ## License
 
 [MIT](LICENSE)
