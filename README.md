@@ -1,15 +1,20 @@
 # devhost
 
 **Per-directory port virtualization for dev servers.** Every project — and
-every git worktree — gets its own loopback IP, so they can all bind `:3000`
-at the same time. No `PORT=13001` workarounds, no dev servers killing each
-other, no code changes.
+every git worktree — gets its own loopback IP, so they can all bind the same
+ports at the same time. No `PORT=13001` workarounds, no dev servers killing
+each other, no code changes.
 
 ```
-~/work/app        → 127.77.60.193   → http://app.test:3000
-~/work/app-wt-a   → 127.77.40.164   → http://app-wt-a.test:3000
-~/work/app-wt-b   → 127.77.201.7    → http://app-wt-b.test:3000
+~/work/app        → 127.77.60.193   → http://app.devhost:3000
+~/work/app-wt-a   → 127.77.40.164   → http://app-wt-a.devhost:3000  (same repo, worktree)
+~/work/app-wt-b   → 127.77.201.7    → http://app-wt-b.devhost:3000  (same repo, worktree)
+~/work/api        → 127.77.113.42   → http://api.devhost:8080, :9229, :5432 ...
 ```
+
+devhost virtualizes the **address**, not the port — `:3000` just makes the
+worktree collision vivid. Whatever your servers bind (`:5173`, `:8080`, a
+web+API+debugger trio) works unchanged, all ports per project at once.
 
 Built for the parallel-agent era: when AI coding agents run one dev server
 per worktree, fixed ports stop being a convention and start being a fight.
@@ -28,13 +33,14 @@ per worktree, fixed ports stop being a convention and start being a fight.
    .listen(3000)` — anything — binds the project IP instead of
    `0.0.0.0`/`localhost`. Zero project configuration. Outside a marked tree
    the shim is a pass-through.
-4. **Names.** `<dirname>.test` resolves to the project IP, so the browser
+4. **Names.** `<dirname>.devhost` resolves to the project IP, so the browser
    URL is stable and human.
 5. **`localhost` still works.** Because real servers moved to `127.77.*`,
-   `127.0.0.1:<port>` is free. The optional `devhost daemon` mirror-listens
-   there, identifies each caller by its working directory, and routes it to
-   *its own* project's server — `curl localhost:3000` inside a worktree hits
-   that worktree.
+   `127.0.0.1:<port>` is free — for every port those servers use. The
+   optional `devhost daemon` mirror-listens there, identifies each caller by
+   its working directory, and routes it to *its own* project's server —
+   `curl localhost:3000` (or `:5173`, or any bound port) inside a worktree
+   hits that worktree.
 
 ## Quick start
 
@@ -46,8 +52,10 @@ devhost setup            # installs shims, prints the PATH line to add
 # once per project
 cd ~/work/app && devhost init && git add .devhost
 
-# that's it
-npm run dev              # binds 127.77.x.y:3000  →  http://app.test:3000
+# that's it — every port the project binds is virtualized
+npm run dev              # next dev  → http://app.devhost:3000
+                         # vite      → http://app.devhost:5173
+                         # storybook → http://app.devhost:6006
 ```
 
 Optional localhost routing daemon (launchd/systemd):
@@ -85,7 +93,7 @@ the supervised port-watch proxy lands.
 ## Roadmap
 
 - [ ] Privileged helper + narrow sudoers install (`devhost setup --helper`)
-- [ ] Built-in DNS responder + `/etc/resolver/test` (stop touching `/etc/hosts`)
+- [ ] Built-in DNS responder + `/etc/resolver/devhost` (stop touching `/etc/hosts`)
 - [ ] `devhost exec` port-watch proxy (universal, runtime-agnostic tier)
 - [ ] Python / Ruby injection adapters
 - [ ] Linux eBPF backend: `cgroup/bind4` rewrite — kernel-level, catches

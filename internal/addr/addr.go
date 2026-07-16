@@ -26,7 +26,7 @@ func ForDir(root string) string {
 }
 
 // Name returns the hostname label for a project root (served as
-// "<label>.test"): the lowercased basename with every run of characters
+// "<label>.devhost"): the lowercased basename with every run of characters
 // outside [a-z0-9-] collapsed to a single '-', trimmed of leading and
 // trailing dashes.
 func Name(root string) string {

@@ -13,13 +13,16 @@ process murder.
 Give every project its own loopback **IP** instead of its own port. The IP is
 a pure function of the project root path (md5 → `127.77.x.y`), so it needs no
 coordination, no registry to stay consistent across machines, and worktrees
-diverge automatically. Ports stay fixed; the address varies.
+diverge automatically. Ports stay fixed; the address varies. Note what this
+buys over port remapping: the port is untouched, so *every* port a project
+binds — web, API, HMR websocket, debugger — is virtualized at once, and
+printed URLs keep their familiar port numbers.
 
 Two things must then be made true:
 
 1. servers must *bind* the project IP without being configured to;
 2. clients must still *reach* the server by habit (`localhost:3000`) or by a
-   stable name (`app.test:3000`).
+   stable name (`app.devhost:3000`).
 
 ## Tiered rebinding strategy
 
@@ -63,10 +66,14 @@ free at the same layer.
 
 ## Addressing
 
-- **`<name>.test`** — the sanitized project basename, mapped to the project
-  IP. Currently a tagged `/etc/hosts` line; the roadmap replaces this with a
-  built-in DNS responder behind `/etc/resolver/test`, so `/etc/hosts` is
-  never mutated. `.test` is IANA-reserved for exactly this.
+- **`<name>.devhost`** — the sanitized project basename, mapped to the
+  project IP. Currently a tagged `/etc/hosts` line; the roadmap replaces
+  this with a built-in DNS responder behind `/etc/resolver/devhost`, so
+  `/etc/hosts` is never mutated. A product-scoped TLD keeps devhost out of
+  `.test`, which other local-dev tools (puma-dev and friends) conventionally
+  claim — devhost owns its namespace outright. The honest trade-off:
+  `.devhost` is not IANA-reserved the way `.test` is; it is vanishingly
+  unlikely to be delegated, and the TLD is a single constant if it ever is.
 - **`localhost:<port>`** — restored by the mirror-router below.
 
 ## devhostd: the localhost mirror-router
@@ -88,7 +95,7 @@ command inside worktree B reaches B's — client-side changes: none.
 Trade-offs, stated plainly: while a devhost project holds a port, unrelated
 apps can't bind `127.0.0.1:<that port>`; and the lsof caller lookup adds
 ~100ms to connection *setup* (libproc will cut this to sub-ms). The daemon is
-an optional convenience layer — IP virtualization and `.test` names work
+an optional convenience layer — IP virtualization and `.devhost` names work
 without it.
 
 ## Privilege model

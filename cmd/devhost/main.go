@@ -65,7 +65,7 @@ and git worktrees can all bind :3000 at once. See README for the full story.
 Usage:
   devhost init [dir]        opt a project in (creates a .devhost marker)
   devhost ip [dir]          print the project's loopback IP
-  devhost name [dir]        print the project's hostname label (<name>.test)
+  devhost name [dir]        print the project's hostname label (<name>.devhost)
   devhost exec -- CMD ...   run CMD with the project environment applied
   devhost setup             install runtime shims and print PATH instructions
   devhost daemon            run the localhost mirror-router (devhostd)

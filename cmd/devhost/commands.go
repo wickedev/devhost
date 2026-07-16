@@ -55,7 +55,7 @@ func cmdInit(args []string) error {
 	if err := os.WriteFile(marker, nil, 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("initialized %s\n  ip:   %s\n  host: %s.test\n", marker, addr.ForDir(abs), addr.Name(abs))
+	fmt.Printf("initialized %s\n  ip:   %s\n  host: %s\n", marker, addr.ForDir(abs), hosts.FQDN(addr.Name(abs)))
 	fmt.Println("commit the marker so git worktrees inherit it")
 	return nil
 }
@@ -80,7 +80,7 @@ func cmdName(args []string) error {
 
 // activate makes a project's loopback IP and hostname usable: interface
 // alias plus hosts entry. Each step is best-effort so a missing privilege
-// degrades one feature (e.g. the .test hostname), not the whole run.
+// degrades one feature (e.g. the .devhost hostname), not the whole run.
 func activate(root string) error {
 	ip := addr.ForDir(root)
 	var errs []error
@@ -180,7 +180,7 @@ func cmdLs(args []string) error {
 		for ip := range ips {
 			name := names[ip]
 			if name != "" {
-				name = name + ".test"
+				name = hosts.FQDN(name)
 			}
 			lines = append(lines, fmt.Sprintf("%s:%d\t%s", ip, port, name))
 		}
@@ -223,7 +223,7 @@ func cmdDoctor(args []string) error {
 		report(netif.HasAlias(ip), "loopback alias "+ip,
 			"created on first activation; manual: sudo ifconfig lo0 alias "+ip+" up")
 		name := addr.Name(root)
-		report(hosts.Has(ip, name), "hosts entry "+name+".test",
+		report(hosts.Has(ip, name), "hosts entry "+hosts.FQDN(name),
 			"created on first activation (needs passwordless sudo or the helper)")
 	}
 
