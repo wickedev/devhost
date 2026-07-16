@@ -1,0 +1,41 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false # stdlib-only module — no go.sum to key a cache on
+      # The tap formula bump needs a PAT with contents:write on
+      # wickedev/homebrew-tap; GITHUB_TOKEN can't push to another repo.
+      # Without the secret we still release — just skip the formula.
+      - name: Check tap token
+        id: flags
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "args=release --clean --skip=homebrew" >> "$GITHUB_OUTPUT"
+            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN not set — skipping tap formula update"
+          else
+            echo "args=release --clean" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: ${{ steps.flags.outputs.args }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

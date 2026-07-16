@@ -1,0 +1,40 @@
+version: 2
+
+project_name: devhost
+
+builds:
+  - main: ./cmd/devhost
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  # install.sh resolves releases/latest/download/devhost_<os>_<arch>.tar.gz —
+  # this naming is load-bearing, keep it stable
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+# goreleaser deprecates `brews` in favor of homebrew_casks, but casks are
+# macOS-only and this tap serves Linux too — a formula remains correct here.
+brews:
+  - repository:
+      owner: wickedev
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/wickedev/devhost
+    description: Per-directory port virtualization for dev servers
+    license: MIT
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/devhost version")

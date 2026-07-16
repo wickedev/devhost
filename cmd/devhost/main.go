@@ -13,7 +13,8 @@ import (
 	"github.com/wickedev/devhost/internal/daemon"
 )
 
-const version = "0.1.0"
+// version is injected by goreleaser (-X main.version) on release builds.
+var version = "dev"
 
 func main() {
 	log.SetFlags(0)
