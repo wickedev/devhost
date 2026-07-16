@@ -382,6 +382,7 @@ $ npx playwright test                 $ npx playwright test
     var el = document.getElementById("gh-stars");
     var KEY = "gh-stars-devhost";
     function fmt(n) {
+      if (n < 1) return ""; // a zero reads worse than no counter at all
       if (n >= 1000) return (Math.round(n / 100) / 10).toFixed(1).replace(/\.0$/, "") + "k";
       return String(n);
     }
