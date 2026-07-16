@@ -111,11 +111,13 @@
     font-size: 12px;
     display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   }
-  .req { position: relative; height: 1.5em; min-width: 21ch; }
+  /* absolutely-positioned spans don't size the parent — reserve the width
+     of the longest cwd ("cwd ~/work/storefront-cart-fix" = 30ch) explicitly */
+  .req { position: relative; height: 1.5em; min-width: 30ch; }
   .req span {
     position: absolute; inset: 0; opacity: 0; color: var(--ink);
     animation: cwd 9s infinite;
-    white-space: nowrap;
+    white-space: nowrap; text-align: right;
   }
   .req span b { color: var(--route); font-weight: 500; }
   .req span:nth-child(2) { animation-delay: 3s; }
@@ -172,10 +174,9 @@
   .opt h3 small { font-weight: 400; color: var(--muted); font-size: 12px; }
   .opt pre {
     background: var(--term); color: var(--term-ink);
-    padding: 14px 16px; font-size: 12.5px; overflow-x: auto; flex: 1;
+    padding: 16px; font-size: 12.5px; overflow-x: auto;
   }
-  .opt .note { padding: 10px 16px; font-size: 12.5px; color: var(--muted); background: var(--panel); }
-  .opt pre .c { color: #7e97ab; }
+  .opt .note { padding: 10px 16px; font-size: 12.5px; color: var(--muted); background: var(--panel); flex: 1; }
 
   /* steps */
   .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; counter-reset: step; }
@@ -268,9 +269,8 @@
       <div class="opts">
         <div class="opt">
           <h3>curl <small>macOS · Linux</small></h3>
-          <pre><span class="c"># installs to ~/.local/bin</span>
-curl -fsSL https://wickedev.github.io/devhost/install.sh | sh</pre>
-          <div class="note">Downloads the latest release binary for your OS/arch. No sudo.</div>
+          <pre>curl -fsSL https://wickedev.github.io/devhost/install.sh | sh</pre>
+          <div class="note">Downloads the latest release binary for your OS/arch into <code>~/.local/bin</code>. No sudo.</div>
         </div>
         <div class="opt">
           <h3>Homebrew <small>macOS · Linux</small></h3>
