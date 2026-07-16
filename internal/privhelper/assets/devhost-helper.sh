@@ -8,6 +8,9 @@
 #
 #   devhost-helper alias <ip>                add <ip> as an lo0 alias (macOS)
 #   devhost-helper hosts <ip> <name> <root>  register "<name>.devhost -> <ip>"
+#   devhost-helper resolver <port>           route the .devhost TLD to the
+#                                            local responder (macOS)
+#   devhost-helper resolver-remove           remove that resolver stub
 set -eu
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export LC_ALL=C
@@ -25,6 +28,8 @@ valid_ip() {
 }
 # a single DNS label
 valid_name() { printf '%s' "$1" | grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'; }
+# a TCP/UDP port
+valid_port() { printf '%s' "$1" | grep -Eq '^[1-9][0-9]{0,4}$' && [ "$1" -le 65535 ]; }
 # absolute path; no control chars, '#', or backslash (they could forge lines)
 valid_root() { printf '%s' "$1" | grep -Eq '^/[^[:cntrl:]#\\]*$'; }
 
@@ -63,6 +68,18 @@ hosts)
   chmod 644 "$tmp"
   chown 0:0 "$tmp" 2>/dev/null || chown root:wheel "$tmp"
   mv "$tmp" /etc/hosts
+  ;;
+resolver)
+  [ $# -eq 1 ] || usage
+  valid_port "$1" || refuse port "$1"
+  [ "$(uname)" = Darwin ] || exit 0 # /etc/resolver is a macOS mechanism
+  mkdir -p /etc/resolver
+  printf 'nameserver 127.0.0.1\nport %s\n' "$1" >/etc/resolver/devhost
+  chmod 644 /etc/resolver/devhost
+  ;;
+resolver-remove)
+  [ $# -eq 0 ] || usage
+  rm -f /etc/resolver/devhost
   ;;
 *)
   usage

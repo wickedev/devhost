@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,15 +12,18 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/wickedev/devhost/internal/addr"
 	"github.com/wickedev/devhost/internal/daemon"
+	"github.com/wickedev/devhost/internal/dnsserver"
 	"github.com/wickedev/devhost/internal/hosts"
 	"github.com/wickedev/devhost/internal/inject"
 	"github.com/wickedev/devhost/internal/interpose"
 	"github.com/wickedev/devhost/internal/netif"
 	"github.com/wickedev/devhost/internal/privhelper"
 	"github.com/wickedev/devhost/internal/project"
+	"github.com/wickedev/devhost/internal/registry"
 	"github.com/wickedev/devhost/internal/selfupdate"
 	"github.com/wickedev/devhost/internal/shim"
 )
@@ -83,16 +87,25 @@ func cmdName(args []string) error {
 }
 
 // activate makes a project's loopback IP and hostname usable: interface
-// alias plus hosts entry. Each step is best-effort so a missing privilege
-// degrades one feature (e.g. the .devhost hostname), not the whole run.
+// alias, DNS registry entry, and — only when the DNS resolver isn't handling
+// the TLD — an /etc/hosts fallback. Each step is best-effort so a missing
+// privilege degrades one feature (e.g. the .devhost hostname), not the whole
+// run.
 func activate(root string) error {
 	ip := addr.ForDir(root)
+	name := addr.Name(root)
 	var errs []error
 	if err := netif.EnsureAlias(ip); err != nil {
 		errs = append(errs, err)
 	}
-	if err := hosts.Ensure(ip, addr.Name(root), root); err != nil {
-		errs = append(errs, err)
+	// Always record for the DNS responder; harmless if unused.
+	registry.Add(name, ip, root) //nolint:errcheck
+	// When the resolver routes .devhost to our responder, never touch
+	// /etc/hosts — that's the whole point of the DNS path.
+	if !privhelper.ResolverInstalled() {
+		if err := hosts.Ensure(ip, name, root); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -199,7 +212,12 @@ func cmdLs(args []string) error {
 		fmt.Println("no active devhost listeners")
 		return nil
 	}
-	names := hosts.Names()
+	names := hosts.Names() // /etc/hosts path
+	for _, e := range registry.All() {
+		if names[e.IP] == "" { // DNS path — registry is the source of truth
+			names[e.IP] = e.Name
+		}
+	}
 	var lines []string
 	for port, ips := range ports {
 		for ip := range ips {
@@ -213,6 +231,34 @@ func cmdLs(args []string) error {
 	sort.Strings(lines)
 	fmt.Println(strings.Join(lines, "\n"))
 	return nil
+}
+
+// dnsResponderAlive probes the local responder for a known registered name.
+func dnsResponderAlive() bool {
+	entries := registry.All()
+	if len(entries) == 0 {
+		return true // nothing to resolve yet — don't cry wolf
+	}
+	c, err := net.Dial("udp", net.JoinHostPort("127.0.0.1", fmt.Sprint(dnsserver.Port)))
+	if err != nil {
+		return false
+	}
+	defer c.Close()
+	// minimal A query for "<name>.devhost"
+	name := entries[0].Name
+	q := []byte{0x12, 0x34, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0}
+	q = append(q, byte(len(name)))
+	q = append(q, name...)
+	q = append(q, byte(len("devhost")))
+	q = append(q, "devhost"...)
+	q = append(q, 0, 0, 1, 0, 1)
+	c.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := c.Write(q); err != nil {
+		return false
+	}
+	resp := make([]byte, 64)
+	n, err := c.Read(resp)
+	return err == nil && n >= 12 && resp[0] == 0x12 && resp[1] == 0x34
 }
 
 func cmdDoctor(args []string) error {
@@ -254,6 +300,15 @@ func cmdDoctor(args []string) error {
 		report(false, "privileged helper", "run `devhost setup --helper` — without it, lo0 aliases and .devhost hostnames can't be registered")
 	}
 
+	if privhelper.ResolverInstalled() {
+		// The resolver only helps if the responder is actually answering.
+		alive := dnsResponderAlive()
+		report(alive, "DNS resolver (.devhost via responder)",
+			"resolver is configured but the responder isn't answering — start `devhost daemon`")
+	} else {
+		fmt.Println("- DNS resolver not configured (.devhost names use /etc/hosts; `devhost setup --helper` switches to DNS)")
+	}
+
 	cwd, _ := os.Getwd()
 	root := project.FindRoot(cwd)
 	report(root != "", "project marker ("+project.Marker+")", "run `devhost init` in your project root")
@@ -262,8 +317,14 @@ func cmdDoctor(args []string) error {
 		report(netif.HasAlias(ip), "loopback alias "+ip,
 			"created on first activation; manual: sudo ifconfig lo0 alias "+ip+" up")
 		name := addr.Name(root)
-		report(hosts.Has(ip, name), "hosts entry "+hosts.FQDN(name),
-			"created on first activation (needs passwordless sudo or the helper)")
+		if privhelper.ResolverInstalled() {
+			// DNS mode: the name lives in the registry, not /etc/hosts.
+			report(registry.Lookup(name) == ip, "DNS entry "+hosts.FQDN(name),
+				"recorded on first activation (run a dev server once in this project)")
+		} else {
+			report(hosts.Has(ip, name), "hosts entry "+hosts.FQDN(name),
+				"created on first activation (needs passwordless sudo or the helper)")
+		}
 	}
 
 	ports, err := daemon.DevhostListeners()

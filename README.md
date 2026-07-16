@@ -36,7 +36,9 @@ per worktree, fixed ports stop being a convention and start being a fight.
    app config. Zero project configuration. Outside a marked tree the shim is
    a pass-through.
 4. **Names.** `<dirname>.devhost` resolves to the project IP, so the browser
-   URL is stable and human.
+   URL is stable and human. On macOS a tiny built-in DNS responder serves the
+   `.devhost` TLD (via `/etc/resolver/devhost`), so nothing writes to
+   `/etc/hosts`; without the helper it falls back to a tagged hosts entry.
 5. **`localhost` still works.** Because real servers moved to `127.77.*`,
    `127.0.0.1:<port>` is free — for every port those servers use. The
    optional `devhost daemon` mirror-listens there, identifies each caller by
@@ -114,16 +116,22 @@ lands) `/etc/hosts` entries. Instead of asking for broad sudo, install the
 devhost setup --helper   # one-time password prompt
 ```
 
-This installs a ~60-line validating shell script, root-owned at
+This installs a short validating shell script, root-owned at
 `/usr/local/libexec/devhost-helper`, plus a single sudoers line allowing
 exactly it — [audit the whole trust surface here](internal/privhelper/assets/devhost-helper.sh).
 It refuses anything outside `127.77.0.0/16`, malformed hostnames, and
-newline/comment injection. Uninstall:
-`sudo rm /usr/local/libexec/devhost-helper /etc/sudoers.d/devhost`.
+newline/comment injection.
 
-Without the helper, devhost falls back to passwordless sudo if present, and
-degrades gracefully (direct-IP access still works) if not. Linux needs no
-privilege for IPs at all — `127/8` routes natively.
+On macOS it also installs `/etc/resolver/devhost`, which routes the
+`.devhost` TLD to devhost's own DNS responder (run by `devhost daemon`).
+From then on **`/etc/hosts` is never touched** — names resolve from a
+registry the daemon serves over DNS. Uninstall:
+`sudo /usr/local/libexec/devhost-helper resolver-remove && sudo rm /usr/local/libexec/devhost-helper /etc/sudoers.d/devhost`.
+
+Without the helper, devhost falls back to passwordless sudo and a tagged
+`/etc/hosts` entry if present, and degrades gracefully (direct-IP access
+still works) if not. Linux needs no privilege for IPs at all — `127/8`
+routes natively; hostname resolution there stays on `/etc/hosts` for now.
 
 ## Platform notes
 
@@ -146,7 +154,6 @@ Windows has no preload primitive; use WSL2, where the Linux path works as-is.
 
 ## Roadmap
 
-- [ ] Built-in DNS responder + `/etc/resolver/devhost` (stop touching `/etc/hosts`)
 - [ ] `devhost exec` port-watch proxy (covers hardened/static binaries without injection)
 - [ ] Linux eBPF backend: `cgroup/bind4` rewrite — kernel-level, catches
       everything including static Go binaries

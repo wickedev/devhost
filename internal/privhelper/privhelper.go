@@ -12,13 +12,20 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
+	"strconv"
+
+	"github.com/wickedev/devhost/internal/dnsserver"
 )
 
 // Path is where the helper lives; netif and hosts try it before falling back
 // to plain passwordless sudo.
 const Path = "/usr/local/libexec/devhost-helper"
 
-const sudoersFile = "/etc/sudoers.d/devhost"
+const (
+	sudoersFile  = "/etc/sudoers.d/devhost"
+	resolverFile = "/etc/resolver/devhost"
+)
 
 //go:embed assets/devhost-helper.sh
 var script []byte
@@ -70,6 +77,29 @@ func Install() error {
 		}
 	}
 	fmt.Println("helper installed — devhost no longer needs broad sudo")
-	fmt.Println("uninstall: sudo rm " + Path + " " + sudoersFile)
+	if err := InstallResolver(dnsserver.Port); err == nil && runtime.GOOS == "darwin" {
+		fmt.Println("resolver installed — .devhost hostnames now resolve via DNS, not /etc/hosts")
+		fmt.Println("  (run `devhost daemon` so the responder is answering)")
+	}
+	fmt.Println("uninstall: sudo " + Path + " resolver-remove; sudo rm " + Path + " " + sudoersFile)
 	return nil
+}
+
+// InstallResolver routes the .devhost TLD to the local responder on port,
+// through the helper. macOS only; a no-op elsewhere. Replaces /etc/hosts
+// entries with DNS resolution.
+func InstallResolver(port int) error {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	if !Installed() {
+		return fmt.Errorf("privileged helper required first (devhost setup --helper)")
+	}
+	return exec.Command("sudo", "-n", Path, "resolver", strconv.Itoa(port)).Run()
+}
+
+// ResolverInstalled reports whether the .devhost resolver stub is present.
+func ResolverInstalled() bool {
+	_, err := os.Stat(resolverFile)
+	return err == nil
 }

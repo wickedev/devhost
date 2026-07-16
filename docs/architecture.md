@@ -81,11 +81,16 @@ free at the same layer.
 ## Addressing
 
 - **`<name>.devhost`** — the sanitized project basename, mapped to the
-  project IP. Currently a tagged `/etc/hosts` line; the roadmap replaces
-  this with a built-in DNS responder behind `/etc/resolver/devhost`, so
-  `/etc/hosts` is never mutated. A product-scoped TLD keeps devhost out of
-  `.test`, which other local-dev tools (puma-dev and friends) conventionally
-  claim — devhost owns its namespace outright. The honest trade-off:
+  project IP. On macOS the daemon runs a small DNS responder (RFC 1035, just
+  enough to answer one A question) and `/etc/resolver/devhost` — installed
+  once by the helper — routes only that TLD to it. `/etc/hosts` is never
+  mutated: each activation records its `name -> ip` in a registry the
+  responder serves. Because the interposer derives IPs one-way from paths,
+  `name -> ip` isn't computable, so the registry is the source of truth.
+  Without the helper, devhost falls back to a tagged `/etc/hosts` line; Linux
+  stays on that path for now (its per-domain DNS story is distro-specific).
+  A product-scoped TLD keeps devhost out of `.test`, which other local-dev
+  tools (puma-dev and friends) conventionally claim. The honest trade-off:
   `.devhost` is not IANA-reserved the way `.test` is; it is vanishingly
   unlikely to be delegated, and the TLD is a single constant if it ever is.
 - **`localhost:<port>`** — restored by the mirror-router below.
@@ -114,12 +119,13 @@ without it.
 
 ## Privilege model
 
-macOS needs root twice: `lo0` aliases and (until the DNS responder lands)
-`/etc/hosts`. The supported path is `devhost setup --helper`: a short
-root-owned validating shell script (`/usr/local/libexec/devhost-helper`,
-auditable in one screenful) allowed by a single NOPASSWD sudoers line that
-names exactly it. The helper accepts two verbs — `alias <ip>` and
-`hosts <ip> <name> <root>` — validates every field (IP must be inside
+macOS needs root for `lo0` aliases and, once, to drop the
+`/etc/resolver/devhost` stub (after which `/etc/hosts` is never touched). The
+supported path is `devhost setup --helper`: a short root-owned validating
+shell script (`/usr/local/libexec/devhost-helper`, auditable in one
+screenful) allowed by a single NOPASSWD sudoers line that names exactly it.
+The helper accepts `alias <ip>`, `hosts <ip> <name> <root>`,
+`resolver <port>`, and `resolver-remove` — validating every field (IP must be inside
 `127.77.0.0/16`, the hostname must be one DNS label, the root path may not
 contain control characters, `#`, or backslashes, and embedded newlines are
 refused everywhere since per-line regex matching would otherwise let a

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/wickedev/devhost/internal/addr"
+	"github.com/wickedev/devhost/internal/dnsserver"
 	"github.com/wickedev/devhost/internal/project"
 )
 
@@ -30,10 +31,17 @@ const (
 	dialTimeout  = 3 * time.Second
 )
 
-// Run starts the mirror-router and blocks until ctx is done.
+// Run starts the mirror-router (and the DNS responder) and blocks until ctx
+// is done.
 func Run(ctx context.Context) error {
+	go func() {
+		if err := dnsserver.ListenAndServe(); err != nil {
+			log.Printf("dns responder: %v (hostnames fall back to /etc/hosts)", err)
+		}
+	}()
+
 	r := &router{mirrors: map[int]net.Listener{}}
-	log.Printf("mirror-router started (scan every %s)", scanInterval)
+	log.Printf("mirror-router started (scan every %s); dns responder on 127.0.0.1:%d", scanInterval, dnsserver.Port)
 	ticker := time.NewTicker(scanInterval)
 	defer ticker.Stop()
 	for {
