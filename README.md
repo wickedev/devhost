@@ -64,6 +64,27 @@ Optional localhost routing daemon (launchd/systemd):
 devhost daemon
 ```
 
+## Browsers and test runners too — parallel E2E, for real
+
+The mirror-router identifies each caller by the working directory of the
+connecting **process**, and child processes inherit it. So it isn't just
+curl: a Playwright- or Puppeteer-launched Chromium (its network process
+included), `fetch` in vitest, pytest's requests, a Go test's http client —
+anything started inside a worktree resolves `localhost:<port>` to *that
+worktree's* server.
+
+```sh
+# worktree A                        # worktree B — at the same time
+npx playwright test                 npx playwright test
+#  webServer → 127.77.60.193:3000   #  webServer → 127.77.40.164:3000
+#  chromium  → localhost:3000 → A   #  chromium  → localhost:3000 → B
+```
+
+Full E2E suites in N worktrees at once; nothing collides, nothing gets
+killed. For clients whose working directory is *outside* the project — a
+browser opened from the Dock, a shared browser over CDP — use the stable
+name instead: `baseURL: "http://app.devhost:3000"`.
+
 ## Commands
 
 | Command | What it does |
