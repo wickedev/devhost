@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/wickedev/devhost/internal/daemon"
+	"github.com/wickedev/devhost/internal/selfupdate"
 )
 
 // version is injected by goreleaser (-X main.version) on release builds.
@@ -44,6 +45,8 @@ func main() {
 		err = cmdLs(args)
 	case "doctor":
 		err = cmdDoctor(args)
+	case "upgrade":
+		err = selfupdate.Upgrade(version, os.Stdout)
 	case "version":
 		fmt.Println(version)
 	case "help", "-h", "--help":
@@ -72,6 +75,7 @@ Usage:
   devhost daemon            run the localhost mirror-router (devhostd)
   devhost ls                list active devhost listeners
   devhost doctor            diagnose the local installation
+  devhost upgrade           update devhost to the latest release
   devhost version           print version
 `)
 }

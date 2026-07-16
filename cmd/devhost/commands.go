@@ -17,6 +17,7 @@ import (
 	"github.com/wickedev/devhost/internal/inject"
 	"github.com/wickedev/devhost/internal/netif"
 	"github.com/wickedev/devhost/internal/project"
+	"github.com/wickedev/devhost/internal/selfupdate"
 	"github.com/wickedev/devhost/internal/shim"
 )
 
@@ -231,6 +232,15 @@ func cmdDoctor(args []string) error {
 	report(err == nil, "listener scan", fmt.Sprint(err))
 	if err == nil {
 		fmt.Printf("  %d active devhost listener port(s)\n", len(ports))
+	}
+
+	if latest, err := selfupdate.Latest(); err != nil {
+		fmt.Println("- version check skipped (release lookup failed)")
+	} else if version == latest {
+		fmt.Printf("✓ devhost %s is the latest release\n", version)
+	} else {
+		report(false, fmt.Sprintf("devhost %s (latest is %s)", version, latest),
+			"run `devhost upgrade`")
 	}
 	return nil
 }

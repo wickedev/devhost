@@ -47,6 +47,7 @@ per worktree, fixed ports stop being a convention and start being a fight.
 ```sh
 # once per machine — pick one:
 curl -fsSL https://wickedev.github.io/devhost/install.sh | sh   # prebuilt binary, no sudo
+                                                                # (update later: devhost upgrade)
 brew install wickedev/tap/devhost                               # Homebrew
 go install github.com/wickedev/devhost/cmd/devhost@latest       # from source
 
@@ -98,7 +99,8 @@ name instead: `baseURL: "http://storefront.devhost:3000"`.
 | `devhost setup` | install PATH shims |
 | `devhost daemon` | localhost mirror-router |
 | `devhost ls` | active devhost listeners |
-| `devhost doctor` | diagnose the installation |
+| `devhost doctor` | diagnose the installation (also mentions when an update is available) |
+| `devhost upgrade` | update devhost to the latest release |
 
 ## Platform notes
 
