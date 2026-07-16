@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>devhost — every directory gets its own localhost</title>
+<meta name="description" content="Per-directory port virtualization for dev servers. Every project and git worktree gets its own loopback IP, so they can all bind :3000 at once.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #eff3f6;
+    --panel: #e4eaef;
+    --ink: #10202e;
+    --muted: #52677a;
+    --line: #c5d2dc;
+    --route: #e8590c;
+    --route-soft: #fbe3d4;
+    --alt: #0e7490;
+    --term: #10202e;
+    --term-ink: #d7e3ec;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--sans);
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.55;
+    font-size: 16px;
+  }
+  ::selection { background: var(--route-soft); }
+  a { color: inherit; }
+  code, pre, .mono { font-family: var(--mono); }
+
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+
+  /* header */
+  header {
+    border-bottom: 1px solid var(--line);
+  }
+  .nav {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 18px 0;
+  }
+  .mark { font-family: var(--mono); font-weight: 600; font-size: 17px; letter-spacing: -0.02em; }
+  .mark .tld { color: var(--route); }
+  .nav a { text-decoration: none; font-size: 14px; color: var(--muted); }
+  .nav a:hover, .nav a:focus-visible { color: var(--ink); }
+  .nav nav { display: flex; gap: 22px; }
+
+  /* hero */
+  .hero { padding: 72px 0 64px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; }
+  h1 {
+    font-size: clamp(34px, 4.6vw, 52px);
+    line-height: 1.06;
+    letter-spacing: -0.028em;
+    font-weight: 700;
+  }
+  h1 .ip { color: var(--route); white-space: nowrap; }
+  .hero p.sub {
+    margin: 20px 0 30px;
+    font-size: 17px;
+    color: var(--muted);
+    max-width: 46ch;
+  }
+  .hero p.sub code { font-size: 15px; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+
+  .install-line {
+    display: flex; align-items: stretch;
+    border: 1px solid var(--ink);
+    background: var(--term);
+    color: var(--term-ink);
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 560px;
+  }
+  .install-line pre {
+    padding: 13px 16px; font-size: 13.5px; overflow-x: auto; flex: 1;
+    display: flex; align-items: center;
+  }
+  .install-line .dollar { color: #7e97ab; margin-right: 9px; user-select: none; }
+  .copy {
+    font-family: var(--mono); font-size: 12.5px; border: 0; cursor: pointer;
+    background: #1d3347; color: var(--term-ink);
+    padding: 0 16px; border-left: 1px solid #2c4358;
+  }
+  .copy:hover, .copy:focus-visible { background: var(--route); color: #fff; }
+  .hero .under { margin-top: 14px; font-size: 13.5px; color: var(--muted); }
+  .hero .under a { color: var(--muted); }
+
+  /* routing diagram — the signature */
+  .routes {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 0 var(--line);
+    font-family: var(--mono);
+    font-size: 13.5px;
+    overflow: hidden;
+  }
+  .routes .head {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  .req { position: relative; height: 1.5em; min-width: 21ch; }
+  .req span {
+    position: absolute; inset: 0; opacity: 0; color: var(--ink);
+    animation: cwd 9s infinite;
+    white-space: nowrap;
+  }
+  .req span b { color: var(--route); font-weight: 500; }
+  .req span:nth-child(2) { animation-delay: 3s; }
+  .req span:nth-child(3) { animation-delay: 6s; }
+  @keyframes cwd { 0%,30% { opacity: 1; } 33.33%,97% { opacity: 0; } 100% { opacity: 1; } }
+
+  .route-row {
+    display: grid;
+    grid-template-columns: minmax(0,1.2fr) minmax(0,1fr) auto;
+    gap: 10px;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--line);
+    align-items: baseline;
+    position: relative;
+  }
+  .route-row:last-of-type { border-bottom: 0; }
+  .route-row .dir { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .route-row .addr { color: var(--muted); text-align: right; white-space: nowrap; }
+  .route-row .addr b { color: var(--ink); font-weight: 500; }
+  .route-row .port { color: var(--alt); white-space: nowrap; }
+  .route-row::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--route); opacity: 0;
+  }
+  .r1::before { animation: lit 9s infinite; }
+  .r2::before { animation: lit 9s infinite 3s; }
+  .r3::before { animation: lit 9s infinite 6s; }
+  .r1 .addr b, .r2 .addr b, .r3 .addr b { animation: inklit 9s infinite; }
+  .r2 .addr b { animation-delay: 3s; }
+  .r3 .addr b { animation-delay: 6s; }
+  @keyframes lit { 0%,30% { opacity: 1; } 33.33%,97% { opacity: 0; } 100% { opacity: 1; } }
+  @keyframes inklit { 0%,30% { color: var(--route); } 33.33%,97% { color: var(--ink); } 100% { color: var(--route); } }
+  .routes .foot { padding: 11px 18px; font-size: 12px; color: var(--muted); background: var(--panel); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .req span, .route-row::before, .route-row .addr b { animation: none !important; }
+    .req span:first-child { opacity: 1; }
+    .r1::before { opacity: 1; }
+  }
+
+  /* sections */
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--route); margin-bottom: 14px;
+  }
+  h2 { font-size: 26px; letter-spacing: -0.02em; margin-bottom: 10px; }
+  .lede { color: var(--muted); max-width: 62ch; margin-bottom: 30px; }
+
+  /* install options */
+  .opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .opt { border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; display: flex; flex-direction: column; }
+  .opt h3 { font-size: 14px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+  .opt h3 small { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .opt pre {
+    background: var(--term); color: var(--term-ink);
+    padding: 14px 16px; font-size: 12.5px; overflow-x: auto; flex: 1;
+  }
+  .opt .note { padding: 10px 16px; font-size: 12.5px; color: var(--muted); background: var(--panel); }
+  .opt pre .c { color: #7e97ab; }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; counter-reset: step; }
+  .step { border-top: 2px solid var(--ink); padding-top: 12px; }
+  .step::before {
+    counter-increment: step; content: counter(step, decimal-leading-zero);
+    font-family: var(--mono); font-size: 12px; color: var(--route); display: block; margin-bottom: 6px;
+  }
+  .step h3 { font-size: 14.5px; margin-bottom: 6px; }
+  .step p { font-size: 13.5px; color: var(--muted); }
+  .step code { font-size: 12px; background: var(--panel); padding: 1px 4px; border-radius: 3px; }
+
+  /* e2e terminal */
+  .term {
+    background: var(--term); color: var(--term-ink); border-radius: 10px;
+    padding: 20px 22px; font-family: var(--mono); font-size: 13px;
+    overflow-x: auto; line-height: 1.75;
+  }
+  .term .c { color: #7e97ab; }
+  .term .a { color: #f2a67c; }
+  .term .b { color: #7cd0e0; }
+
+  footer { border-top: 1px solid var(--line); padding: 28px 0 48px; font-size: 13.5px; color: var(--muted); display: block; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  footer a { color: var(--muted); }
+  footer a:hover { color: var(--ink); }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; gap: 36px; padding: 48px 0 44px; }
+    .opts { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 520px) {
+    .steps { grid-template-columns: 1fr; }
+    .route-row { grid-template-columns: 1fr; gap: 2px; }
+    .route-row .addr { text-align: left; }
+  }
+  :focus-visible { outline: 2px solid var(--route); outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <span class="mark">devhost<span class="tld">:*</span></span>
+    <nav>
+      <a href="#install">Install</a>
+      <a href="#how">How it works</a>
+      <a href="https://github.com/wickedev/devhost">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <h1>Every directory gets its own <span class="ip">localhost</span>.</h1>
+      <p class="sub">devhost gives each project — and each git worktree — its own
+      loopback IP, so they can all bind <code>:3000</code> at the same time.
+      No port remapping, no dev servers killing each other, no code changes.</p>
+      <div class="install-line">
+        <pre id="quick"><span class="dollar">$</span>curl -fsSL https://wickedev.github.io/devhost/install.sh | sh</pre>
+        <button class="copy" data-copy="curl -fsSL https://wickedev.github.io/devhost/install.sh | sh">copy</button>
+      </div>
+      <p class="under">macOS &amp; Linux · single static binary · no dependencies · <a href="https://github.com/wickedev/devhost">source on GitHub</a></p>
+    </div>
+
+    <div class="routes" aria-label="routing table diagram">
+      <div class="head">
+        <span>curl localhost:3000</span>
+        <span class="req" aria-hidden="true">
+          <span>cwd <b>~/work/app</b></span>
+          <span>cwd <b>~/work/app-wt-a</b></span>
+          <span>cwd <b>~/work/app-wt-b</b></span>
+        </span>
+      </div>
+      <div class="route-row r1"><span class="dir">~/work/app</span><span class="addr"><b>127.77.60.193</b></span><span class="port">:3000</span></div>
+      <div class="route-row r2"><span class="dir">~/work/app-wt-a</span><span class="addr"><b>127.77.40.164</b></span><span class="port">:3000</span></div>
+      <div class="route-row r3"><span class="dir">~/work/app-wt-b</span><span class="addr"><b>127.77.201.7</b></span><span class="port">:3000</span></div>
+      <div class="foot">same port, three servers — routed by the caller's working directory</div>
+    </div>
+  </div>
+
+  <section id="install">
+    <div class="wrap">
+      <p class="eyebrow">install</p>
+      <h2>Pick one</h2>
+      <p class="lede">Then <code class="mono">devhost setup</code> once per machine, and
+      <code class="mono">devhost init</code> once per project. Commit the marker; worktrees inherit it.</p>
+      <div class="opts">
+        <div class="opt">
+          <h3>curl <small>macOS · Linux</small></h3>
+          <pre><span class="c"># installs to ~/.local/bin</span>
+curl -fsSL https://wickedev.github.io/devhost/install.sh | sh</pre>
+          <div class="note">Downloads the latest release binary for your OS/arch. No sudo.</div>
+        </div>
+        <div class="opt">
+          <h3>Homebrew <small>macOS · Linux</small></h3>
+          <pre>brew install wickedev/tap/devhost</pre>
+          <div class="note">Builds from the release source with Go — a few seconds, stdlib only.</div>
+        </div>
+        <div class="opt">
+          <h3>go install <small>any platform with Go</small></h3>
+          <pre>go install github.com/wickedev/devhost/cmd/devhost@latest</pre>
+          <div class="note">Zero dependencies outside the Go standard library.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <p class="eyebrow">mechanism</p>
+      <h2>How it works</h2>
+      <p class="lede">devhost virtualizes the <em>address</em>, not the port — every port a
+      project binds is covered at once, and URLs keep their familiar port numbers.</p>
+      <div class="steps">
+        <div class="step"><h3>Marker</h3><p>An empty <code>.devhost</code> file opts a tree in. Commit it; git worktrees inherit it.</p></div>
+        <div class="step"><h3>Deterministic IP</h3><p>The root path hashes into <code>127.77.0.0/16</code>. Same path, same IP — no registry, no coordination.</p></div>
+        <div class="step"><h3>Transparent rebinding</h3><p>A PATH shim injects a tiny listen patch, so <code>next dev</code> or plain Node binds the project IP untouched.</p></div>
+        <div class="step"><h3>Stable names</h3><p><code>&lt;dirname&gt;.devhost</code> resolves to the project IP — a browser URL that never changes.</p></div>
+        <div class="step"><h3>localhost, restored</h3><p>The daemon routes <code>localhost:3000</code> by the caller's cwd — each worktree reaches its own server.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">proof</p>
+      <h2>Parallel E2E, for real</h2>
+      <p class="lede">Browsers inherit the test runner's working directory — a
+      Playwright Chromium in worktree A and one in worktree B both open
+      <code class="mono">localhost:3000</code> and each reaches its own server.</p>
+      <pre class="term"><span class="c"># worktree A</span>                          <span class="c"># worktree B — at the same time</span>
+$ npx playwright test                 $ npx playwright test
+<span class="a">webServer → 127.77.60.193:3000</span>       <span class="b">webServer → 127.77.40.164:3000</span>
+<span class="a">chromium  → localhost:3000 → A ✓</span>     <span class="b">chromium  → localhost:3000 → B ✓</span></pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MIT © <a href="https://github.com/wickedev">wickedev</a></span>
+    <span><a href="https://github.com/wickedev/devhost">github.com/wickedev/devhost</a> · <a href="https://github.com/wickedev/devhost/blob/main/docs/architecture.md">architecture</a></span>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll(".copy").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      navigator.clipboard.writeText(btn.dataset.copy).then(function () {
+        btn.textContent = "copied";
+        setTimeout(function () { btn.textContent = "copy"; }, 1600);
+      });
+    });
+  });
+</script>
+</body>
+</html>

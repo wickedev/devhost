@@ -45,8 +45,11 @@ per worktree, fixed ports stop being a convention and start being a fight.
 ## Quick start
 
 ```sh
-# once per machine
-go install github.com/wickedev/devhost/cmd/devhost@latest
+# once per machine — pick one:
+curl -fsSL https://wickedev.github.io/devhost/install.sh | sh   # prebuilt binary, no sudo
+brew install wickedev/tap/devhost                               # Homebrew
+go install github.com/wickedev/devhost/cmd/devhost@latest       # from source
+
 devhost setup            # installs shims, prints the PATH line to add
 
 # once per project
