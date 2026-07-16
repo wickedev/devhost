@@ -58,10 +58,16 @@ again). On Linux there is nothing to resurrect: `LD_PRELOAD` survives shell
 chains, and `/etc/ld.so.preload` can load the interposer with zero
 environment variables anywhere.
 
+The interposer rewrites IPv6 too: a `::`/`::1` bind becomes the IPv4-mapped
+project address `::ffff:127.77.x.y` (with `IPV6_V6ONLY` cleared), which a v4
+client reaches at the project IP — so dual-stack servers isolate the same way.
+
 Honest limits: binaries signed with hardened runtime + library validation
 refuse injection (rare for brew/asdf/mise-installed dev tooling); Go on
-*Linux* makes raw syscalls past libc (the eBPF tier closes this); IPv6
-wildcard binds pass through. Those cases fall to tiers 1b/2/3.
+*Linux* makes raw syscalls past libc. The eBPF tier closes the Linux-static
+gap, and `devhost exec --proxy` (which watches the child's loopback listeners
+and mirrors each onto the project IP) gives reachability — though not
+same-port isolation — for anything that can't be injected at all.
 
 Below the shim, macOS offers nothing: pf can't fix `EADDRINUSE` (the
 collision happens at the syscall, before any packet exists), Network
@@ -125,11 +131,12 @@ Moving servers off `127.0.0.1` frees `127.0.0.1:<port>`. The daemon:
 So `curl localhost:3000` inside worktree A reaches A's server while the same
 command inside worktree B reaches B's — client-side changes: none.
 
-Trade-offs, stated plainly: while a devhost project holds a port, unrelated
-apps can't bind `127.0.0.1:<that port>`; and the lsof caller lookup adds
-~100ms to connection *setup* (libproc will cut this to sub-ms). The daemon is
-an optional convenience layer — IP virtualization and `.devhost` names work
-without it.
+Caller lookup uses the `proc_info(2)` syscall in-process on macOS (source
+port → PID → cwd, no fork+exec), which is sub-millisecond; it falls back to
+`lsof` if the struct offsets ever drift. Trade-off, stated plainly: while a
+devhost project holds a port, unrelated apps can't bind `127.0.0.1:<that
+port>`. The daemon is an optional convenience layer — IP virtualization and
+`.devhost` names work without it.
 
 ## Privilege model
 

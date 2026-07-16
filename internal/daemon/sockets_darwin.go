@@ -46,9 +46,38 @@ func DevhostListeners() (map[int]map[string]bool, error) {
 	return res, nil
 }
 
+// LoopbackListenerPorts returns TCP ports currently listening on 127.0.0.1
+// (used by `devhost exec --proxy` to discover a child's bound port).
+func LoopbackListenerPorts() (map[int]bool, error) {
+	out, err := exec.Command(lsof, "-nP", "-iTCP@127.0.0.1", "-sTCP:LISTEN", "-Fn").Output()
+	if err != nil && len(out) == 0 {
+		return map[int]bool{}, nil
+	}
+	ports := map[int]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		if len(line) < 2 || line[0] != 'n' {
+			continue
+		}
+		if i := strings.LastIndex(line, ":"); i >= 0 {
+			if p, err := strconv.Atoi(line[i+1:]); err == nil {
+				ports[p] = true
+			}
+		}
+	}
+	return ports, nil
+}
+
 // pidBySrcPort finds the PID owning the client end of a connection from
-// 127.0.0.1:srcPort to 127.0.0.1:dstPort.
+// 127.0.0.1:srcPort to 127.0.0.1:dstPort. Tries the in-process proc_info
+// scan first, falling back to lsof.
 func pidBySrcPort(srcPort, dstPort int) (int, error) {
+	if pid, err := pidBySrcPortProc(srcPort, dstPort); err == nil {
+		return pid, nil
+	}
+	return pidBySrcPortLsof(srcPort, dstPort)
+}
+
+func pidBySrcPortLsof(srcPort, dstPort int) (int, error) {
 	out, err := exec.Command(lsof, "-nP", "-iTCP:"+strconv.Itoa(srcPort), "-Fpn").Output()
 	if err != nil && len(out) == 0 {
 		return 0, fmt.Errorf("lsof: %w", err)
@@ -66,8 +95,16 @@ func pidBySrcPort(srcPort, dstPort int) (int, error) {
 	return 0, errors.New("caller pid not found")
 }
 
-// cwdOfPid returns the working directory of a process.
+// cwdOfPid returns the working directory of a process, via proc_info with an
+// lsof fallback.
 func cwdOfPid(pid int) (string, error) {
+	if cwd, err := cwdOfPidProc(pid); err == nil {
+		return cwd, nil
+	}
+	return cwdOfPidLsof(pid)
+}
+
+func cwdOfPidLsof(pid int) (string, error) {
 	out, err := exec.Command(lsof, "-a", "-p", strconv.Itoa(pid), "-d", "cwd", "-Fn").Output()
 	if err != nil && len(out) == 0 {
 		return "", fmt.Errorf("lsof: %w", err)

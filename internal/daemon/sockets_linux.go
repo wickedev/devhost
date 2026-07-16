@@ -55,6 +55,31 @@ func DevhostListeners() (map[int]map[string]bool, error) {
 	return res, nil
 }
 
+// LoopbackListenerPorts returns TCP ports listening on 127.0.0.1, parsed from
+// /proc/net/tcp (state 0A on local address 0100007F).
+func LoopbackListenerPorts() (map[int]bool, error) {
+	b, err := os.ReadFile("/proc/net/tcp")
+	if err != nil {
+		return nil, err
+	}
+	ports := map[int]bool{}
+	lines := strings.Split(string(b), "\n")
+	for _, l := range lines[1:] {
+		f := strings.Fields(l)
+		if len(f) < 4 || f[3] != "0A" {
+			continue
+		}
+		hp := strings.Split(f[1], ":")
+		if len(hp) != 2 || hp[0] != "0100007F" {
+			continue
+		}
+		if p, err := strconv.ParseUint(hp[1], 16, 16); err == nil {
+			ports[int(p)] = true
+		}
+	}
+	return ports, nil
+}
+
 func pidBySrcPort(int, int) (int, error) {
 	return 0, errors.New("caller lookup not implemented on linux yet (eBPF backend planned)")
 }

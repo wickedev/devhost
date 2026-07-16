@@ -143,28 +143,41 @@ routes natively; hostname resolution there stays on `/etc/hosts` for now.
 
 **Runtime coverage.** The `bind()` interposer covers every dynamically-linked
 runtime — Node, Python, Ruby, the JVM, and (on macOS) even Go binaries, since
-darwin routes syscalls through libSystem. Node additionally gets a
-`NODE_OPTIONS` listen patch as belt-and-braces. Known gaps, stated plainly:
-binaries signed with the hardened runtime + library validation refuse
-injection (rare for dev tooling installed via brew/asdf/mise), and IPv6
-wildcard binds pass through unrewritten.
+darwin routes syscalls through libSystem. It rewrites both IPv4 and IPv6
+wildcard/loopback binds (a `::` bind becomes the IPv4-mapped project address,
+reachable over v4). Node additionally gets a `NODE_OPTIONS` listen patch as
+belt-and-braces. The one gap: binaries signed with the hardened runtime +
+library validation refuse injection (rare for dev tooling installed via
+brew/asdf/mise) — for those, `devhost exec --proxy` mirrors whatever loopback
+port they open onto the project IP so they stay reachable at `<name>.devhost`.
 
 On **Linux**, static binaries that issue raw syscalls past libc (Go) slip the
 `LD_PRELOAD` interposer — so `devhost exec` also attaches a kernel-level
-**eBPF `cgroup/bind4`** program when it can (root / `CAP_BPF` + `CAP_NET_ADMIN`
-and a writable cgroup2). That rewrites bind at the syscall boundary, catching
-everything including static Go servers. It's opt-in by privilege: without it,
-dynamically-linked runtimes still work via the interposer, and anything else
-falls back to the `HOST`/`PORT` convention env.
+**eBPF `cgroup/bind4`+`bind6`** program when it can (root / `CAP_BPF` +
+`CAP_NET_ADMIN` and a writable cgroup2). That rewrites bind at the syscall
+boundary, catching everything including static Go servers. Prefer zero env
+vars? `sudo devhost setup --preload` registers the interposer in
+`/etc/ld.so.preload` so dynamically-linked servers rebind with nothing in the
+environment at all.
 
 Windows has no preload primitive; use WSL2, where the Linux path works as-is.
 
 ## Roadmap
 
-- [ ] `devhost exec` port-watch proxy (covers hardened macOS binaries without injection)
-- [ ] `/etc/ld.so.preload` opt-in on Linux (interposer with zero env vars anywhere)
-- [ ] IPv6 wildcard rewriting in the interposer
-- [ ] libproc-based caller lookup on macOS (sub-ms, replaces `lsof`)
+The core is complete — every tier below is implemented and tested:
+
+- [x] Deterministic per-directory IPs, `.devhost` marker, PATH shims
+- [x] Universal `bind()` interposer (macOS DYLD / Linux LD_PRELOAD), IPv4 + IPv6
+- [x] `localhost` mirror-router with cwd-based caller routing (in-process libproc on macOS)
+- [x] Built-in DNS responder + `/etc/resolver/devhost` (no `/etc/hosts` writes)
+- [x] Narrow privileged helper (`devhost setup --helper`)
+- [x] Linux eBPF `cgroup/bind4`+`bind6` backend for static binaries
+- [x] `/etc/ld.so.preload` opt-in (env-free rebinding, Linux)
+- [x] `devhost exec --proxy` for un-injectable binaries
+- [x] `devhost upgrade` self-update + automated goreleaser releases
+
+Possible future work: a `connect4` eBPF hook for localhost routing on Linux,
+and native Windows support beyond WSL2.
 
 ## License
 

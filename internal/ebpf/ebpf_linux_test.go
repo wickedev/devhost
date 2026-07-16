@@ -36,6 +36,27 @@ func TestProgramEncoding(t *testing.T) {
 	}
 }
 
+func TestProgram6Encoding(t *testing.T) {
+	p := program6(net.ParseIP("127.77.99.88"))
+	if len(p) != 16*8 {
+		t.Fatalf("program6 = %d bytes, want %d", len(p), 16*8)
+	}
+	// insn 11: STX_W [r1+16], r4 — writes ip6[2] (the ::ffff word)
+	s := p[11*8 : 12*8]
+	if s[0] != 0x63 || binary.LittleEndian.Uint16(s[2:]) != 16 {
+		t.Errorf("insn11 (store ip6[2]) wrong: % x", s)
+	}
+	// insn 10: MOV r4, 0xffff0000
+	if got := binary.LittleEndian.Uint32(p[10*8+4:]); got != 0xffff0000 {
+		t.Errorf("insn10 mapped word = %#x, want 0xffff0000", got)
+	}
+	// insn 12: MOV r5, v4
+	want := binary.LittleEndian.Uint32(net.ParseIP("127.77.99.88").To4())
+	if got := binary.LittleEndian.Uint32(p[12*8+4:]); got != want {
+		t.Errorf("insn12 v4 = %#x, want %#x", got, want)
+	}
+}
+
 func TestCgroupPathStable(t *testing.T) {
 	a := cgroupPath("127.77.60.193")
 	if a != cgroupPath("127.77.60.193") {

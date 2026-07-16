@@ -134,14 +134,54 @@ __attribute__((constructor)) static void devhost_resolve(void) {
   }
 }
 
-static int devhost_rewrite(const struct sockaddr *addr, struct sockaddr_in *out) {
-  if (!project_ip || !addr || addr->sa_family != AF_INET) return 0;
+/* IPv4: rewrite an ANY/loopback bind to the project IP. Returns 1 if rewritten. */
+static int rewrite4(const struct sockaddr *addr, struct sockaddr_in *out) {
+  if (addr->sa_family != AF_INET) return 0;
   memcpy(out, addr, sizeof *out);
   if (out->sin_addr.s_addr != htonl(INADDR_ANY) &&
       out->sin_addr.s_addr != htonl(INADDR_LOOPBACK))
     return 0;
   out->sin_addr.s_addr = project_ip;
   return 1;
+}
+
+/* IPv6: rewrite an ANY/loopback bind to the IPv4-mapped project address
+ * (::ffff:127.77.x.y), which a v4 client reaches at the project IP. Returns
+ * 1 if rewritten. */
+static int rewrite6(const struct sockaddr *addr, struct sockaddr_in6 *out) {
+  if (addr->sa_family != AF_INET6) return 0;
+  memcpy(out, addr, sizeof *out);
+  const struct in6_addr *a = &out->sin6_addr;
+  if (memcmp(a, &in6addr_any, sizeof *a) != 0 &&
+      memcmp(a, &in6addr_loopback, sizeof *a) != 0)
+    return 0;
+  unsigned char *b = (unsigned char *)&out->sin6_addr;
+  memset(b, 0, 10);
+  b[10] = 0xff;
+  b[11] = 0xff;
+  memcpy(b + 12, &project_ip, 4); /* project_ip is already network order */
+  return 1;
+}
+
+/* Shared bind wrapper: rewrite v4/v6 wildcard-or-loopback binds, and for v6
+ * clear IPV6_V6ONLY so the IPv4-mapped address is reachable over v4. */
+static int devhost_do_bind(
+    int (*real)(int, const struct sockaddr *, socklen_t),
+    int fd, const struct sockaddr *addr, socklen_t len) {
+  if (project_ip && addr) {
+    if (addr->sa_family == AF_INET) {
+      struct sockaddr_in a;
+      if (rewrite4(addr, &a)) return real(fd, (struct sockaddr *)&a, sizeof a);
+    } else if (addr->sa_family == AF_INET6) {
+      struct sockaddr_in6 a;
+      if (rewrite6(addr, &a)) {
+        int off = 0;
+        setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof off);
+        return real(fd, (struct sockaddr *)&a, sizeof a);
+      }
+    }
+  }
+  return real(fd, addr, len);
 }
 
 /* ---- interposition ---- */
@@ -153,9 +193,7 @@ typedef struct {
 } interpose_t;
 
 static int devhost_bind(int fd, const struct sockaddr *addr, socklen_t len) {
-  struct sockaddr_in a;
-  if (devhost_rewrite(addr, &a)) return bind(fd, (struct sockaddr *)&a, sizeof a);
-  return bind(fd, addr, len);
+  return devhost_do_bind(bind, fd, addr, len);
 }
 
 __attribute__((used)) static const interpose_t interposers[]
@@ -168,9 +206,7 @@ __attribute__((used)) static const interpose_t interposers[]
 int bind(int fd, const struct sockaddr *addr, socklen_t len) {
   static int (*real_bind)(int, const struct sockaddr *, socklen_t);
   if (!real_bind) real_bind = dlsym(RTLD_NEXT, "bind");
-  struct sockaddr_in a;
-  if (devhost_rewrite(addr, &a)) return real_bind(fd, (struct sockaddr *)&a, sizeof a);
-  return real_bind(fd, addr, len);
+  return devhost_do_bind(real_bind, fd, addr, len);
 }
 
 #endif

@@ -73,6 +73,7 @@ Usage:
   devhost exec -- CMD ...   run CMD with the project environment applied
   devhost setup             install runtime shims and print PATH instructions
   devhost setup --helper    install the narrow root helper (one-time sudo)
+  devhost setup --preload   (linux) load the interposer via /etc/ld.so.preload
   devhost daemon            run the localhost mirror-router (devhostd)
   devhost ls                list active devhost listeners
   devhost doctor            diagnose the local installation

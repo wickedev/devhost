@@ -28,6 +28,7 @@ const (
 
 	progTypeCgroupSockAddr = 18
 	attachTypeInet4Bind    = 8
+	attachTypeInet6Bind    = 9
 
 	attrSize = 144 // sizeof(union bpf_attr) — smaller truncates expected_attach_type
 
@@ -85,8 +86,43 @@ func program(ip net.IP) []byte {
 	return p
 }
 
-func loadProgram(ip net.IP) (int, error) {
-	prog := program(ip)
+// program6 rewrites an AF_INET6 wildcard/loopback bind (::/::1) to the
+// IPv4-mapped project address ::ffff:<v4>, matching the interposer. user_ip6
+// is a __u32[4] at offset 8 in struct bpf_sock_addr, in network byte order.
+func program6(ip net.IP) []byte {
+	const (
+		LDX_W     = 0x61
+		STX_W     = 0x63
+		MOV64_IMM = 0xb7
+		JEQ_K     = 0x15
+		JNE_K     = 0x55
+		JA        = 0x05
+		EXIT      = 0x95
+	)
+	v4 := int32(binary.LittleEndian.Uint32(ip.To4()))
+	const mappedWord2 = int32(-65536)    // 0xffff0000: bytes 00 00 ff ff
+	const loopbackW3 = int32(0x01000000) // ::1 -> last byte 1 in network order
+	var p []byte
+	p = append(p, insn(LDX_W, 2, 1, 8, 0)...)               // 0: r2 = ip6[0]
+	p = append(p, insn(LDX_W, 3, 1, 12, 0)...)              // 1: r3 = ip6[1]
+	p = append(p, insn(LDX_W, 4, 1, 16, 0)...)              // 2: r4 = ip6[2]
+	p = append(p, insn(LDX_W, 5, 1, 20, 0)...)              // 3: r5 = ip6[3]
+	p = append(p, insn(JNE_K, 2, 0, 9, 0)...)               // 4: if r2!=0 -> end(14)
+	p = append(p, insn(JNE_K, 3, 0, 8, 0)...)               // 5: if r3!=0 -> end
+	p = append(p, insn(JNE_K, 4, 0, 7, 0)...)               // 6: if r4!=0 -> end
+	p = append(p, insn(JEQ_K, 5, 0, 2, 0)...)               // 7: if r5==0(::)  -> rewrite(10)
+	p = append(p, insn(JEQ_K, 5, 0, 1, loopbackW3)...)      // 8: if r5==::1    -> rewrite
+	p = append(p, insn(JA, 0, 0, 4, 0)...)                  // 9: else         -> end
+	p = append(p, insn(MOV64_IMM, 4, 0, 0, mappedWord2)...) // 10: r4 = 0xffff0000
+	p = append(p, insn(STX_W, 1, 4, 16, 0)...)              // 11: ip6[2] = r4
+	p = append(p, insn(MOV64_IMM, 5, 0, 0, v4)...)          // 12: r5 = v4
+	p = append(p, insn(STX_W, 1, 5, 20, 0)...)              // 13: ip6[3] = r5
+	p = append(p, insn(MOV64_IMM, 0, 0, 0, 1)...)           // 14: r0 = 1 (allow)
+	p = append(p, insn(EXIT, 0, 0, 0, 0)...)                // 15: exit
+	return p
+}
+
+func loadProgramBytes(prog []byte, attachType uint32) (int, error) {
 	license := append([]byte("GPL"), 0)
 	log := make([]byte, 8192)
 
@@ -98,7 +134,7 @@ func loadProgram(ip net.IP) (int, error) {
 	binary.LittleEndian.PutUint32(attr[24:], 1)
 	binary.LittleEndian.PutUint32(attr[28:], uint32(len(log)))
 	binary.LittleEndian.PutUint64(attr[32:], uint64(uintptr(unsafe.Pointer(&log[0]))))
-	binary.LittleEndian.PutUint32(attr[68:], attachTypeInet4Bind)
+	binary.LittleEndian.PutUint32(attr[68:], attachType)
 
 	fd, err := bpf(cmdProgLoad, attr)
 	if err != nil {
@@ -110,14 +146,24 @@ func loadProgram(ip net.IP) (int, error) {
 	return fd, nil
 }
 
-func attach(progFd, cgroupFd int) error {
+func attach(progFd, cgroupFd int, attachType uint32) error {
 	attr := make([]byte, attrSize)
 	binary.LittleEndian.PutUint32(attr[0:], uint32(cgroupFd)) // target_fd
 	binary.LittleEndian.PutUint32(attr[4:], uint32(progFd))   // attach_bpf_fd
-	binary.LittleEndian.PutUint32(attr[8:], attachTypeInet4Bind)
+	binary.LittleEndian.PutUint32(attr[8:], attachType)
 	binary.LittleEndian.PutUint32(attr[12:], 1) // BPF_F_ALLOW_OVERRIDE
 	_, err := bpf(cmdProgAttach, attr)
 	return err
+}
+
+// attachOne loads prog and attaches it to the cgroup for the given bind type.
+func attachOne(prog []byte, attachType uint32, cgroupFd int) error {
+	fd, err := loadProgramBytes(prog, attachType)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	return attach(fd, cgroupFd, attachType)
 }
 
 // cgroupPath is the per-project cgroup for an IP (stable, collision-free).
@@ -132,7 +178,7 @@ func Available() bool {
 	if _, err := os.Stat(cgroupRoot + "/cgroup.controllers"); err != nil {
 		return false
 	}
-	fd, err := loadProgram(net.IPv4(127, 77, 0, 1))
+	fd, err := loadProgramBytes(program(net.IPv4(127, 77, 0, 1)), attachTypeInet4Bind)
 	if err != nil {
 		return false
 	}
@@ -140,27 +186,25 @@ func Available() bool {
 	return true
 }
 
-// Activate ensures the bind4 rewrite for ip is attached to the project cgroup
-// and returns that cgroup's path. Idempotent: re-attaching over an existing
-// program replaces it.
+// Activate attaches the bind4 and bind6 rewrites for ip to the project cgroup
+// and returns that cgroup's path. Idempotent: re-attaching replaces.
 func Activate(ip string) (string, error) {
 	path := cgroupPath(ip)
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", fmt.Errorf("create cgroup %s: %w", path, err)
 	}
-	progFd, err := loadProgram(net.ParseIP(ip))
-	if err != nil {
-		return "", err
-	}
-	defer syscall.Close(progFd)
-
 	cg, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer cg.Close()
-	if err := attach(progFd, int(cg.Fd())); err != nil {
-		return "", fmt.Errorf("BPF_PROG_ATTACH: %w", err)
+
+	parsed := net.ParseIP(ip)
+	if err := attachOne(program(parsed), attachTypeInet4Bind, int(cg.Fd())); err != nil {
+		return "", fmt.Errorf("attach bind4: %w", err)
+	}
+	if err := attachOne(program6(parsed), attachTypeInet6Bind, int(cg.Fd())); err != nil {
+		return "", fmt.Errorf("attach bind6: %w", err)
 	}
 	return path, nil
 }

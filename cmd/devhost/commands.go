@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -112,13 +113,22 @@ func activate(root string) error {
 }
 
 func cmdExec(args []string) error {
-	if len(args) > 0 && args[0] == "--" {
+	proxy := false
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		if args[0] == "--" {
+			args = args[1:]
+			break
+		}
+		if args[0] == "--proxy" {
+			proxy = true
+		}
 		args = args[1:]
 	}
 	if len(args) == 0 {
-		return errors.New("usage: devhost exec -- CMD [ARGS...]")
+		return errors.New("usage: devhost exec [--proxy] -- CMD [ARGS...]")
 	}
 	env := os.Environ()
+	projectIP := ""
 	if cwd, err := os.Getwd(); err == nil {
 		if root := project.FindRoot(cwd); root != "" {
 			if err := activate(root); err != nil {
@@ -126,6 +136,7 @@ func cmdExec(args []string) error {
 			}
 			env = inject.Env(env, root)
 			applyEBPF(root) // Linux kernel tier; children inherit the cgroup
+			projectIP = addr.ForDir(root)
 		}
 	}
 	path, err := exec.LookPath(args[0])
@@ -135,12 +146,77 @@ func cmdExec(args []string) error {
 	cmd := exec.Command(path, args[1:]...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+
+	// --proxy: for servers that can't be injected (hardened/static binaries),
+	// mirror whatever loopback port they open onto the project IP so they are
+	// still reachable at <name>.devhost. Note: this gives reachability, not
+	// same-port isolation between un-injectable servers.
+	if proxy && projectIP != "" {
+		stop := make(chan struct{})
+		defer close(stop)
+		go watchAndProxy(projectIP, stop)
+	}
+
 	err = cmd.Run()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		os.Exit(exitErr.ExitCode())
 	}
 	return err
+}
+
+// watchAndProxy mirrors newly-appearing 127.0.0.1 listeners onto projectIP,
+// diffing against a baseline so it only touches ports opened after start.
+func watchAndProxy(projectIP string, stop <-chan struct{}) {
+	baseline, _ := daemon.LoopbackListenerPorts()
+	proxied := map[int]bool{}
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-tick.C:
+		}
+		cur, err := daemon.LoopbackListenerPorts()
+		if err != nil {
+			continue
+		}
+		for port := range cur {
+			if baseline[port] || proxied[port] {
+				continue
+			}
+			proxied[port] = true
+			go proxyPort(projectIP, port, stop)
+			fmt.Fprintf(os.Stderr, "devhost: proxying %s:%d -> 127.0.0.1:%d\n", projectIP, port, port)
+		}
+	}
+}
+
+func proxyPort(projectIP string, port int, stop <-chan struct{}) {
+	ln, err := net.Listen("tcp", net.JoinHostPort(projectIP, fmt.Sprint(port)))
+	if err != nil {
+		return // project IP:port already taken (e.g. the server bound it itself)
+	}
+	go func() { <-stop; ln.Close() }()
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go func() {
+			defer c.Close()
+			u, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprint(port)))
+			if err != nil {
+				return
+			}
+			defer u.Close()
+			done := make(chan struct{}, 2)
+			go func() { io.Copy(u, c); done <- struct{}{} }() //nolint:errcheck
+			go func() { io.Copy(c, u); done <- struct{}{} }() //nolint:errcheck
+			<-done
+		}()
+	}
 }
 
 // cmdShimExec backs the generated PATH shims: `devhost shim-exec TOOL -- ARGS`.
@@ -179,8 +255,13 @@ func cmdShimExec(args []string) error {
 
 func cmdSetup(args []string) error {
 	for _, a := range args {
-		if a == "--helper" {
+		switch a {
+		case "--helper":
 			return privhelper.Install()
+		case "--preload":
+			return interpose.InstallPreload()
+		case "--preload-remove":
+			return interpose.PreloadRemove()
 		}
 	}
 	dir, installed, err := shim.Install(shim.DefaultTools)
