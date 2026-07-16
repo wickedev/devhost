@@ -203,15 +203,15 @@
   .opt { border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; display: flex; flex-direction: column; }
   .opt h3 { font-size: 14px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
   .opt h3 small { font-weight: 400; color: var(--muted); font-size: 12px; }
-  .opt .codebox { position: relative; background: var(--term); }
+  /* flex row like the hero install-line: the button owns its column, so
+     overflowing code clips at the pre's edge instead of sliding beneath it */
+  .opt .codebox { display: flex; align-items: stretch; background: var(--term); }
   .opt pre {
+    flex: 1; min-width: 0;
     color: var(--term-ink);
-    padding: 16px; padding-right: 64px; font-size: 12.5px; overflow-x: auto;
+    padding: 16px; font-size: 12.5px; overflow-x: auto;
   }
-  .codebox .copy {
-    position: absolute; top: 9px; right: 9px;
-    padding: 5px 10px; font-size: 11.5px; border-radius: 6px; border-left: 0;
-  }
+  .codebox .copy { font-size: 11.5px; }
   .opt .note { padding: 10px 16px; font-size: 12.5px; color: var(--muted); background: var(--panel); flex: 1; }
 
   /* steps */
