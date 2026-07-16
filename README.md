@@ -93,6 +93,20 @@ killed. For clients whose working directory is *outside* the project — a
 browser opened from the Dock, a shared browser over CDP — use the stable
 name instead: `baseURL: "http://storefront.devhost:3000"`.
 
+## For AI coding agents
+
+If you drive this project with an AI coding agent, teach it not to fight
+devhost — install the agent skill so it runs dev servers normally and never
+changes ports or kills a port to "free" it (which under devhost kills another
+worktree's server):
+
+```sh
+npx skills add wickedev/devhost   # works with Claude Code, Cursor, Copilot, Cline, +14 more
+```
+
+The skill lives at [`skills/devhost/SKILL.md`](skills/devhost/SKILL.md) —
+tool-neutral, so it's just as useful pasted into an `AGENTS.md` or `CLAUDE.md`.
+
 ## Commands
 
 | Command | What it does |
