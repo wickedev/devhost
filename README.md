@@ -55,13 +55,15 @@ per worktree, fixed ports stop being a convention and start being a fight.
 
 ```sh
 # once per machine — pick one:
-curl -fsSL https://wickedev.github.io/devhost/install.sh | sh   # prebuilt binary, no sudo
+curl -fsSL https://wickedev.github.io/devhost/install.sh | sh   # everything: binary + setup
                                                                 # (update later: devhost upgrade)
-brew install wickedev/tap/devhost                               # Homebrew
-go install github.com/wickedev/devhost/cmd/devhost@latest       # from source
+brew install wickedev/tap/devhost && devhost setup              # Homebrew
+go install github.com/wickedev/devhost/cmd/devhost@latest && devhost setup  # from source
 
-devhost setup            # installs shims, adds them to your shell profile's PATH
-                         # (--no-profile to print the lines instead)
+# `devhost setup` is the whole machine setup: PATH shims, shell profile,
+# localhost-routing daemon (launchd/systemd user service), and the narrow
+# root helper (one sudo prompt). --no-profile / --no-daemon / --no-helper
+# opt out of parts; the curl one-liner runs it for you.
 
 # once per project
 cd ~/work/storefront && devhost init && git add .devhost
@@ -70,12 +72,6 @@ cd ~/work/storefront && devhost init && git add .devhost
 npm run dev              # next dev  → http://storefront.devhost:3000
                          # vite      → http://storefront.devhost:5173
                          # storybook → http://storefront.devhost:6006
-```
-
-Optional localhost routing daemon (launchd/systemd):
-
-```sh
-devhost daemon
 ```
 
 ## Browsers and test runners too — parallel E2E, for real
@@ -120,7 +116,7 @@ tool-neutral, so it's just as useful pasted into an `AGENTS.md` or `CLAUDE.md`.
 | `devhost init [dir]` | create the `.devhost` marker |
 | `devhost ip` / `name` | print the project IP / hostname label |
 | `devhost exec -- CMD` | run any command with the project env applied |
-| `devhost setup` | install PATH shims and add them to the shell profile (`--no-profile` to opt out) |
+| `devhost setup` | one-shot machine setup: shims, PATH, daemon service, root helper (`--no-*` flags opt out) |
 | `devhost daemon` | localhost mirror-router |
 | `devhost ls` | active devhost listeners |
 | `devhost doctor` | diagnose the installation (also mentions when an update is available) |

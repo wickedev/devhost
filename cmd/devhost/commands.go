@@ -27,6 +27,7 @@ import (
 	"github.com/wickedev/devhost/internal/project"
 	"github.com/wickedev/devhost/internal/registry"
 	"github.com/wickedev/devhost/internal/selfupdate"
+	"github.com/wickedev/devhost/internal/service"
 	"github.com/wickedev/devhost/internal/shim"
 )
 
@@ -66,6 +67,14 @@ func cmdInit(args []string) error {
 		return err
 	}
 	fmt.Printf("initialized %s\n  ip:   %s\n  host: %s\n", marker, addr.ForDir(abs), hosts.FQDN(addr.Name(abs)))
+	// Activate right now instead of lazily on the first server run, so a
+	// missing privilege surfaces here — where the fix is actionable — and
+	// the first `npm run dev` just works.
+	if err := activate(abs); err != nil {
+		fmt.Printf("  activation incomplete: %v\n", err)
+	} else {
+		fmt.Println("  network ready: loopback IP + hostname registered")
+	}
 	fmt.Println("commit the marker so git worktrees inherit it")
 	return nil
 }
@@ -254,7 +263,7 @@ func cmdShimExec(args []string) error {
 }
 
 func cmdSetup(args []string) error {
-	noProfile := false
+	noProfile, noDaemon, noHelper := false, false, false
 	for _, a := range args {
 		switch a {
 		case "--helper":
@@ -263,8 +272,14 @@ func cmdSetup(args []string) error {
 			return interpose.InstallPreload()
 		case "--preload-remove":
 			return interpose.PreloadRemove()
+		case "--daemon-remove":
+			return service.Remove()
 		case "--no-profile":
 			noProfile = true
+		case "--no-daemon":
+			noDaemon = true
+		case "--no-helper":
+			noHelper = true
 		}
 	}
 	dir, installed, err := shim.Install(shim.DefaultTools)
@@ -279,13 +294,43 @@ func cmdSetup(args []string) error {
 		fmt.Println("compiled bind() interposer:", lib)
 	}
 	setupPath(dir, noProfile)
-	fmt.Println("\nOptional — localhost routing (`curl localhost:3000` inside a workspace):")
-	fmt.Println("  run `devhost daemon` under your service manager (launchd/systemd)")
-	if !privhelper.Installed() {
-		fmt.Println("\nRecommended — a narrow root helper instead of broad sudo:")
-		fmt.Println("  devhost setup --helper   (one-time password prompt)")
+
+	if noDaemon {
+		fmt.Println("\ndaemon service skipped (--no-daemon) — localhost routing needs `devhost daemon` running")
+	} else if err := service.Install(); err != nil {
+		fmt.Printf("\ndaemon service skipped: %v\n", err)
+		fmt.Println("  localhost routing needs `devhost daemon` running; register it by hand or rerun setup")
+	} else {
+		fmt.Println("\nregistered daemon service:", service.Kind(), "(localhost routing + .devhost DNS)")
+	}
+
+	switch {
+	case privhelper.Installed() || noHelper:
+	case sudoPossible():
+		if err := privhelper.Install(); err != nil {
+			fmt.Printf("root helper skipped: %v\n", err)
+			fmt.Println("  finish later with: devhost setup --helper")
+		}
+	default:
+		fmt.Println("root helper skipped (sudo unavailable here)")
+		fmt.Println("  finish later with: devhost setup --helper   (one-time password prompt)")
 	}
 	return nil
+}
+
+// sudoPossible reports whether privhelper.Install's sudo calls can succeed:
+// either passwordless sudo works, or a terminal exists for the password
+// prompt (sudo prompts on /dev/tty, so this survives `curl | sh`).
+func sudoPossible() bool {
+	if exec.Command("sudo", "-n", "true").Run() == nil {
+		return true
+	}
+	tty, err := os.Open("/dev/tty")
+	if err != nil {
+		return false
+	}
+	tty.Close()
+	return true
 }
 
 // setupPath puts the shim dir (and the devhost binary's dir, when devhost
@@ -459,6 +504,12 @@ func cmdDoctor(args []string) error {
 			"resolver is configured but the responder isn't answering — start `devhost daemon`")
 	} else {
 		fmt.Println("- DNS resolver not configured (.devhost names use /etc/hosts; `devhost setup --helper` switches to DNS)")
+	}
+
+	if service.Installed() {
+		report(true, "daemon service ("+service.Kind()+")", "")
+	} else {
+		fmt.Println("- daemon service not registered (localhost routing off; `devhost setup` registers it)")
 	}
 
 	cwd, _ := os.Getwd()

@@ -36,14 +36,17 @@ mkdir -p "$BIN_DIR"
 install -m 755 "$TMP/devhost" "$BIN_DIR/devhost"
 echo "devhost: installed $BIN_DIR/devhost ($("$BIN_DIR/devhost" version))"
 
-SETUP="devhost setup"
-case ":$PATH:" in
-  *":$BIN_DIR:"*) ;;
-  *) SETUP="$BIN_DIR/devhost setup"
-     echo "devhost: note — $BIN_DIR is not on your PATH; 'devhost setup' will add it" ;;
-esac
-
-echo
-echo "next steps:"
-echo "  $SETUP                 # install shims; adds them (and devhost) to your shell PATH"
-echo "  cd <project> && devhost init  # opt a project in (commit the .devhost marker)"
+# Finish machine setup right here — shims, PATH, daemon service, root
+# helper — so the one-liner is the whole install. DEVHOST_NO_SETUP=1 to
+# only place the binary.
+if [ -z "${DEVHOST_NO_SETUP:-}" ]; then
+  echo
+  "$BIN_DIR/devhost" setup
+  echo
+  echo "next: cd <project> && devhost init   # opt a project in (commit the .devhost marker)"
+else
+  echo
+  echo "next steps:"
+  echo "  $BIN_DIR/devhost setup        # shims, PATH, daemon service, root helper"
+  echo "  cd <project> && devhost init  # opt a project in (commit the .devhost marker)"
+fi
