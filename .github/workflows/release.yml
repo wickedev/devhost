@@ -18,17 +18,17 @@ jobs:
         with:
           go-version: stable
           cache: false # stdlib-only module — no go.sum to key a cache on
-      # The tap formula bump needs a PAT with contents:write on
-      # wickedev/homebrew-tap; GITHUB_TOKEN can't push to another repo.
+      # The tap formula bump pushes to wickedev/homebrew-tap over SSH with
+      # a repo-scoped deploy key (GITHUB_TOKEN can't reach another repo).
       # Without the secret we still release — just skip the formula.
-      - name: Check tap token
+      - name: Check tap deploy key
         id: flags
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAP_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
         run: |
-          if [ -z "$TAP_TOKEN" ]; then
+          if [ -z "$TAP_KEY" ]; then
             echo "args=release --clean --skip=homebrew" >> "$GITHUB_OUTPUT"
-            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN not set — skipping tap formula update"
+            echo "::warning::TAP_DEPLOY_KEY not set — skipping tap formula update"
           else
             echo "args=release --clean" >> "$GITHUB_OUTPUT"
           fi
@@ -38,4 +38,4 @@ jobs:
           args: ${{ steps.flags.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}

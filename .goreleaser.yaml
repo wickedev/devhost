@@ -31,7 +31,11 @@ brews:
   - repository:
       owner: wickedev
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      # Pushed over SSH with a repo-scoped deploy key (TAP_DEPLOY_KEY
+      # secret) — no account-wide PAT involved.
+      git:
+        url: git@github.com:wickedev/homebrew-tap.git
+        private_key: "{{ .Env.TAP_DEPLOY_KEY }}"
     directory: Formula
     homepage: https://github.com/wickedev/devhost
     description: Per-directory port virtualization for dev servers
