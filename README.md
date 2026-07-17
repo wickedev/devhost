@@ -60,7 +60,8 @@ curl -fsSL https://wickedev.github.io/devhost/install.sh | sh   # prebuilt binar
 brew install wickedev/tap/devhost                               # Homebrew
 go install github.com/wickedev/devhost/cmd/devhost@latest       # from source
 
-devhost setup            # installs shims, prints the PATH line to add
+devhost setup            # installs shims, adds them to your shell profile's PATH
+                         # (--no-profile to print the lines instead)
 
 # once per project
 cd ~/work/storefront && devhost init && git add .devhost
@@ -119,7 +120,7 @@ tool-neutral, so it's just as useful pasted into an `AGENTS.md` or `CLAUDE.md`.
 | `devhost init [dir]` | create the `.devhost` marker |
 | `devhost ip` / `name` | print the project IP / hostname label |
 | `devhost exec -- CMD` | run any command with the project env applied |
-| `devhost setup` | install PATH shims |
+| `devhost setup` | install PATH shims and add them to the shell profile (`--no-profile` to opt out) |
 | `devhost daemon` | localhost mirror-router |
 | `devhost ls` | active devhost listeners |
 | `devhost doctor` | diagnose the installation (also mentions when an update is available) |

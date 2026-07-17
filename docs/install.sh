@@ -36,12 +36,14 @@ mkdir -p "$BIN_DIR"
 install -m 755 "$TMP/devhost" "$BIN_DIR/devhost"
 echo "devhost: installed $BIN_DIR/devhost ($("$BIN_DIR/devhost" version))"
 
+SETUP="devhost setup"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *) echo "devhost: note — $BIN_DIR is not on your PATH; add it to your shell profile" ;;
+  *) SETUP="$BIN_DIR/devhost setup"
+     echo "devhost: note — $BIN_DIR is not on your PATH; 'devhost setup' will add it" ;;
 esac
 
 echo
 echo "next steps:"
-echo "  devhost setup                 # install shims; prints the PATH line to add"
+echo "  $SETUP                 # install shims; adds them (and devhost) to your shell PATH"
 echo "  cd <project> && devhost init  # opt a project in (commit the .devhost marker)"

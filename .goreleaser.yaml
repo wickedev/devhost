@@ -36,5 +36,8 @@ brews:
     homepage: https://github.com/wickedev/devhost
     description: Per-directory port virtualization for dev servers
     license: MIT
+    caveats: |
+      Run `devhost setup` to install the runtime shims and add them to
+      your shell profile's PATH (use --no-profile to keep it hands-off).
     test: |
       assert_match version.to_s, shell_output("#{bin}/devhost version")

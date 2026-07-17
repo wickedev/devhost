@@ -71,7 +71,9 @@ Usage:
   devhost ip [dir]          print the project's loopback IP
   devhost name [dir]        print the project's hostname label (<name>.devhost)
   devhost exec -- CMD ...   run CMD with the project environment applied
-  devhost setup             install runtime shims and print PATH instructions
+  devhost setup             install runtime shims and add them to PATH
+                            (--no-profile: print the lines instead of
+                            editing the shell profile)
   devhost setup --helper    install the narrow root helper (one-time sudo)
   devhost setup --preload   (linux) load the interposer via /etc/ld.so.preload
   devhost daemon            run the localhost mirror-router (devhostd)

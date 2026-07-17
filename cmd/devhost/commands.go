@@ -254,6 +254,7 @@ func cmdShimExec(args []string) error {
 }
 
 func cmdSetup(args []string) error {
+	noProfile := false
 	for _, a := range args {
 		switch a {
 		case "--helper":
@@ -262,6 +263,8 @@ func cmdSetup(args []string) error {
 			return interpose.InstallPreload()
 		case "--preload-remove":
 			return interpose.PreloadRemove()
+		case "--no-profile":
+			noProfile = true
 		}
 	}
 	dir, installed, err := shim.Install(shim.DefaultTools)
@@ -275,16 +278,55 @@ func cmdSetup(args []string) error {
 	} else {
 		fmt.Println("compiled bind() interposer:", lib)
 	}
-	fmt.Println("\nAdd to your shell profile, AFTER any version manager init")
-	fmt.Println("(the shim must win the PATH race, then hand off to it):")
-	fmt.Printf("\n  export PATH=\"%s:$PATH\"\n\n", dir)
-	fmt.Println("Optional — localhost routing (`curl localhost:3000` inside a workspace):")
+	setupPath(dir, noProfile)
+	fmt.Println("\nOptional — localhost routing (`curl localhost:3000` inside a workspace):")
 	fmt.Println("  run `devhost daemon` under your service manager (launchd/systemd)")
 	if !privhelper.Installed() {
 		fmt.Println("\nRecommended — a narrow root helper instead of broad sudo:")
 		fmt.Println("  devhost setup --helper   (one-time password prompt)")
 	}
 	return nil
+}
+
+// setupPath puts the shim dir (and the devhost binary's dir, when devhost
+// itself isn't resolvable yet — shims exec `devhost shim-exec`) on PATH by
+// editing the user's shell profile. --no-profile, or a shell we don't know
+// how to edit, falls back to printing the lines to add by hand.
+func setupPath(shimDir string, noProfile bool) {
+	dirs := []string{shimDir}
+	if _, err := exec.LookPath("devhost"); err != nil {
+		if exe, err := os.Executable(); err == nil {
+			dirs = append(dirs, filepath.Dir(exe))
+		}
+	}
+	manual := dirs[:0:0]
+	if noProfile {
+		manual = dirs
+	} else {
+		for _, d := range dirs {
+			profile, added, err := shim.AppendPathToProfile(d)
+			switch {
+			case err != nil:
+				fmt.Printf("could not edit shell profile: %v\n", err)
+				manual = append(manual, d)
+			case added:
+				fmt.Printf("added to %s: export PATH=\"%s:$PATH\"\n", profile, d)
+			default:
+				fmt.Printf("%s already puts %s on PATH\n", profile, d)
+			}
+		}
+		if len(manual) < len(dirs) {
+			fmt.Println("restart your shell (or source the profile) to pick it up")
+		}
+	}
+	if len(manual) > 0 {
+		fmt.Println("\nAdd to your shell profile, AFTER any version manager init")
+		fmt.Println("(the shim must win the PATH race, then hand off to it):")
+		fmt.Println()
+		for _, d := range manual {
+			fmt.Printf("  export PATH=\"%s:$PATH\"\n", d)
+		}
+	}
 }
 
 func cmdLs(args []string) error {
