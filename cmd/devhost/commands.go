@@ -264,7 +264,7 @@ func cmdShimExec(args []string) error {
 }
 
 func cmdSetup(args []string) error {
-	noProfile, noDaemon, noHelper, noSkill := false, false, false, false
+	noProfile, noDaemon, noHelper, noSkill, noDocker := false, false, false, false, false
 	for _, a := range args {
 		switch a {
 		case "--helper":
@@ -285,6 +285,8 @@ func cmdSetup(args []string) error {
 			noHelper = true
 		case "--no-skill":
 			noSkill = true
+		case "--no-docker":
+			noDocker = true
 		}
 	}
 	dir, installed, err := shim.Install(shim.DefaultTools)
@@ -308,7 +310,7 @@ func cmdSetup(args []string) error {
 	} else {
 		fmt.Println("\nregistered daemon service:", service.Kind(), "(localhost routing + .devhost DNS)")
 		if daemon.ResolveUpstream(daemon.ProxySocket()) != "" {
-			fmt.Printf("  container ports: isolate them per project by pointing Docker at the proxy —\n    export DOCKER_HOST=unix://%s\n", daemon.ProxySocket())
+			setupDockerHost(noProfile || noDocker)
 		}
 	}
 
@@ -410,6 +412,33 @@ func cmdUpgrade(args []string) error {
 		}
 	}
 	return nil
+}
+
+// setupDockerHost wires the shell profile to point Docker at devhost's proxy,
+// so container ports isolate per project without a manual step. The exported
+// line is guarded (fires only when the proxy socket exists and DOCKER_HOST is
+// unset), so it never breaks `docker` when the daemon is down. skip prints the
+// line instead of editing the profile (--no-profile / --no-docker).
+func setupDockerHost(skip bool) {
+	sock := daemon.ProxySocket()
+	if skip {
+		fmt.Printf("  container ports: point Docker at the proxy —\n    export DOCKER_HOST=unix://%s\n", sock)
+		return
+	}
+	marker, line, err := shim.DockerHostProfileEntry()
+	if err != nil {
+		fmt.Printf("  container ports: add to your profile —\n    export DOCKER_HOST=unix://%s\n", sock)
+		return
+	}
+	profile, added, err := shim.AppendLineToProfile(marker, line)
+	switch {
+	case err != nil:
+		fmt.Printf("  container ports: couldn't edit profile (%v); add by hand —\n    export DOCKER_HOST=unix://%s\n", err, sock)
+	case added:
+		fmt.Printf("  container ports: added a guarded DOCKER_HOST export to %s\n    (Docker uses the devhost proxy when the daemon is up; restart your shell)\n", profile)
+	default:
+		fmt.Printf("  container ports: %s already points Docker at the devhost proxy\n", profile)
+	}
 }
 
 func cmdLs(args []string) error {

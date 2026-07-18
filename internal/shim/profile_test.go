@@ -82,3 +82,55 @@ func TestAppendOnce(t *testing.T) {
 		t.Fatal("shim PATH line appended before version-manager init")
 	}
 }
+
+func TestDockerHostProfileEntry(t *testing.T) {
+	cases := []struct{ shell, wantSub string }{
+		{"/bin/zsh", `[ -z "$DOCKER_HOST" ] && [ -S "$HOME/.config/devhost/docker.sock" ] && export DOCKER_HOST="unix://$HOME/.config/devhost/docker.sock"`},
+		{"/usr/bin/bash", `[ -z "$DOCKER_HOST" ] && [ -S "$HOME/.config/devhost/docker.sock" ] && export DOCKER_HOST="unix://$HOME/.config/devhost/docker.sock"`},
+		{"/opt/homebrew/bin/fish", `test -z "$DOCKER_HOST"; and test -S "$HOME/.config/devhost/docker.sock"; and set -gx DOCKER_HOST "unix://$HOME/.config/devhost/docker.sock"`},
+	}
+	for _, c := range cases {
+		t.Setenv("SHELL", c.shell)
+		marker, line, err := DockerHostProfileEntry()
+		if err != nil {
+			t.Fatalf("%s: %v", c.shell, err)
+		}
+		if line != c.wantSub {
+			t.Errorf("%s: line = %q, want %q", c.shell, line, c.wantSub)
+		}
+		if !strings.Contains(line, marker) {
+			t.Errorf("%s: marker %q not in line %q", c.shell, marker, line)
+		}
+	}
+	t.Setenv("SHELL", "/bin/tcsh")
+	if _, _, err := DockerHostProfileEntry(); err == nil {
+		t.Error("tcsh: want error for unsupported shell")
+	}
+}
+
+func TestAppendLineToProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/zsh")
+	marker, line, err := DockerHostProfileEntry()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	profile, added, err := AppendLineToProfile(marker, line)
+	if err != nil || !added {
+		t.Fatalf("first append: added=%v err=%v", added, err)
+	}
+	if filepath.Base(profile) != ".zshrc" {
+		t.Fatalf("profile = %s, want .zshrc", profile)
+	}
+	if data, _ := os.ReadFile(profile); !strings.Contains(string(data), line) {
+		t.Fatalf("line missing:\n%s", data)
+	}
+
+	// Idempotent: the marker is already present, so no second line.
+	_, added, err = AppendLineToProfile(marker, line)
+	if err != nil || added {
+		t.Fatalf("second append: added=%v err=%v", added, err)
+	}
+}
