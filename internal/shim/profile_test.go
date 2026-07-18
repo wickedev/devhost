@@ -56,8 +56,12 @@ func TestAppendPathToProfileZshBothFiles(t *testing.T) {
 			t.Errorf("%s: not added on first run", e.Profile)
 		}
 		data, err := os.ReadFile(e.Profile)
-		if err != nil || !strings.Contains(string(data), exportLine(dir)) {
-			t.Errorf("%s: export line missing (err=%v)", e.Profile, err)
+		if err != nil || !strings.Contains(string(data), PathLine("/bin/zsh", dir)) {
+			t.Errorf("%s: path line missing (err=%v)", e.Profile, err)
+		}
+		// De-dup-safe form, so the same line in .zshenv + .zshrc never stacks.
+		if !strings.Contains(string(data), "typeset -U path") {
+			t.Errorf("%s: zsh path line must use `typeset -U path` for de-dup", e.Profile)
 		}
 	}
 
@@ -77,7 +81,7 @@ func TestAppendOnce(t *testing.T) {
 	home := t.TempDir()
 	rc := filepath.Join(home, ".zshrc")
 	dir := filepath.Join(home, ".config", "devhost", "shims")
-	line := exportLine(dir)
+	line := PathLine("/bin/zsh", dir)
 
 	// First append creates the file and adds the line.
 	added, err := appendOnce(rc, line, dir, home)
