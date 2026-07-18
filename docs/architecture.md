@@ -64,8 +64,14 @@ no hardened runtime, so dyld injects into it happily — only the Apple-signed
 hops in the middle of a chain (`/usr/bin/make`, `/bin/sh`) strip the
 variable, and a shim past them re-arms it. `cargo` and `go` are therefore
 shimmed by default, and `devhost shim add TOOL` extends the set to any other
-launcher (persisted, so `devhost setup` re-installs it). Because the shim set
-is an enumeration, `devhost doctor` closes the loop on anything missed: it
+launcher. The shim *file* is machine-global by necessity — PATH is a process
+concept, not a directory one, and the re-injection point must be visible at
+every spawn site (make recipes, IDEs, agents) — but the *declaration* is
+project-scoped: `shim add` records a `shim: TOOL` line in the `.devhost`
+marker, committable, so every checkout and worktree self-provisions the shim
+on activation (`--global` opts into a machine-wide declaration instead).
+Because the shim set is an enumeration, `devhost doctor` closes the loop on
+anything missed: it
 flags listeners bound to plain loopback or the wildcard by a process whose
 cwd sits inside a `.devhost` project, naming the process and port so the fix
 (`devhost exec` or a new shim) is one command away.

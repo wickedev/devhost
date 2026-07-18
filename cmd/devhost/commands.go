@@ -65,7 +65,7 @@ func cmdInit(args []string) error {
 		fmt.Println("already initialized:", marker)
 		return nil
 	}
-	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+	if err := os.WriteFile(marker, []byte(project.Contents), 0o644); err != nil {
 		return err
 	}
 	fmt.Printf("initialized %s\n  ip:   %s\n  host: %s\n", marker, addr.ForDir(abs), hosts.FQDN(addr.Name(abs)))
@@ -117,6 +117,13 @@ func activate(root string) error {
 	// /etc/hosts — that's the whole point of the DNS path.
 	if !privhelper.ResolverInstalled() {
 		if err := hosts.Ensure(ip, name, root); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	// Launchers the marker declares (`shim: TOOL`) install on activation, so
+	// a fresh checkout of a repo self-provisions its shims.
+	if tools := project.ShimTools(root); len(tools) > 0 {
+		if err := shim.EnsureInstalled(tools); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -269,48 +276,95 @@ func cmdShimExec(args []string) error {
 // non-hardened) binary run through a shimmed launcher inherits the bind()
 // interposer, because the shim re-injects at the final exec — after any
 // SIP-protected hop (make, /bin/sh) has stripped DYLD_*.
+//
+// The interception file is machine-global by necessity (PATH is a process
+// concept, not a directory one), but the *declaration* is project-scoped:
+// inside a .devhost tree, `shim add` records a `shim: TOOL` line in the
+// marker, so the repo carries its launcher list and every checkout
+// self-provisions on activation. --global records machine-wide instead.
 func cmdShim(args []string) error {
-	usageErr := errors.New("usage: devhost shim add TOOL... | rm TOOL... | ls")
+	usageErr := errors.New("usage: devhost shim add|rm [--global] TOOL... | ls")
 	if len(args) == 0 {
 		return usageErr
 	}
-	switch args[0] {
+	sub := args[0]
+	global := false
+	var tools []string
+	for _, a := range args[1:] {
+		if a == "--global" {
+			global = true
+		} else {
+			tools = append(tools, a)
+		}
+	}
+	root := ""
+	if cwd, err := os.Getwd(); err == nil {
+		root = project.FindRoot(cwd)
+	}
+	switch sub {
 	case "add":
-		if len(args) < 2 {
+		if len(tools) == 0 {
 			return usageErr
 		}
-		for _, tool := range args[1:] {
+		for _, tool := range tools {
 			if _, err := shim.RealBinary(tool); err != nil {
 				return fmt.Errorf("%q not found on PATH — a shim must never shadow a tool that isn't installed", tool)
 			}
-			added, err := shim.AddCustom(tool)
-			if err != nil {
-				return err
+			if slices.Contains(shim.DefaultTools, tool) {
+				fmt.Printf("%s: already a default shim\n", tool)
+				continue
 			}
-			if !added {
-				fmt.Printf("%s: already shimmed\n", tool)
+			if root != "" && !global {
+				added, err := project.AddShimTool(root, tool)
+				if err != nil {
+					return err
+				}
+				if added {
+					fmt.Printf("%s: declared in %s — commit it so worktrees and teammates inherit it\n",
+						tool, filepath.Join(root, project.Marker))
+				} else {
+					fmt.Printf("%s: already declared in this project\n", tool)
+				}
+			} else {
+				added, err := shim.AddCustom(tool)
+				if err != nil {
+					return err
+				}
+				if added {
+					fmt.Printf("%s: added to the machine-wide shim set\n", tool)
+				} else {
+					fmt.Printf("%s: already in the machine-wide shim set\n", tool)
+				}
 			}
 		}
-		dir, installed, err := shim.Install(shim.AllTools())
-		if err != nil {
-			return err
-		}
-		fmt.Printf("installed shims: %s (%s)\n", dir, strings.Join(installed, ", "))
-		return nil
+		return shim.EnsureInstalled(tools)
 	case "rm":
-		if len(args) < 2 {
+		if len(tools) == 0 {
 			return usageErr
 		}
-		for _, tool := range args[1:] {
+		for _, tool := range tools {
+			if root != "" && !global {
+				removed, err := project.RemoveShimTool(root, tool)
+				if err != nil {
+					return err
+				}
+				if removed {
+					// Keep the shim file: other projects (or the machine set)
+					// may still use it, and it is a pass-through anyway.
+					fmt.Printf("%s: removed from %s\n", tool, filepath.Join(root, project.Marker))
+					continue
+				}
+			}
 			removed, err := shim.RemoveCustom(tool)
 			if err != nil {
 				return err
 			}
-			if removed {
+			switch {
+			case removed:
 				fmt.Printf("removed shim: %s\n", tool)
-			} else if slices.Contains(shim.DefaultTools, tool) {
+			case slices.Contains(shim.DefaultTools, tool):
 				fmt.Printf("%s: a default shim, managed by `devhost setup`\n", tool)
-			} else {
+			default:
 				fmt.Printf("%s: not shimmed\n", tool)
 			}
 		}
@@ -320,7 +374,12 @@ func cmdShim(args []string) error {
 			fmt.Printf("%s (default)\n", tool)
 		}
 		for _, tool := range shim.CustomTools() {
-			fmt.Println(tool)
+			fmt.Printf("%s (machine)\n", tool)
+		}
+		if root != "" {
+			for _, tool := range project.ShimTools(root) {
+				fmt.Printf("%s (this project)\n", tool)
+			}
 		}
 		return nil
 	default:
