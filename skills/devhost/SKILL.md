@@ -1,6 +1,6 @@
 ---
 name: devhost
-description: Work correctly in a repo that uses devhost for per-directory port virtualization — run dev servers normally, never change ports to avoid conflicts, and never kill a process on a port. Use when a project has a .devhost marker or its dev servers are reached at <name>.devhost.
+description: Work correctly in a repo that uses devhost for per-directory port virtualization — run dev servers and containers (docker compose / docker run) normally, never change ports to avoid conflicts, and never kill a process or container to free a port. Use when a project has a .devhost marker, its dev servers are reached at <name>.devhost, or you are about to run Docker/OrbStack in such a repo.
 metadata:
   tags: [dev-server, ports, git-worktree, local-development]
 ---
@@ -13,6 +13,11 @@ number of dev servers can bind the **same** port (e.g. `:3000`) at the same
 time without colliding. A worktree's server is reachable at
 `http://<name>.devhost:<port>` (and at plain `localhost:<port>` from inside
 that worktree, which devhost routes to the right server).
+
+The same isolation extends to **containers**: when Docker is pointed at
+devhost's proxy, `docker compose up` or `docker run -p 3000:3000` in different
+projects publish to different loopback IPs, so containers never fight over a
+host port either.
 
 Detect it: the project (or an ancestor) contains an empty `.devhost` marker
 file, and/or `devhost` is on PATH.
@@ -41,6 +46,18 @@ file, and/or `devhost` is on PATH.
    project directory. Point test runners and browsers (Playwright, etc.) at
    the `.devhost` hostname when they might run outside the project's cwd.
 
+5. **Containers publish per project — treat them the same.** Run
+   `docker compose up`, `docker run -p 3000:3000`, etc. normally. When
+   `DOCKER_HOST` points at devhost's proxy (set by `devhost setup`; socket at
+   `~/.config/devhost/docker.sock`), devhost rewrites each container's
+   published port onto this project's IP, so `:3000` in two projects coexists.
+   Do NOT change the published port and do NOT `docker kill`/`docker rm` a
+   container just to free a host port — a busy port is another project's
+   container. Reach a container at `http://<name>.devhost:<port>` or the
+   project IP. Leave the container port (the right-hand `:3000`) alone. If two
+   projects genuinely collide on a host port, `DOCKER_HOST` isn't pointed at
+   the proxy — surface that rather than moving the port.
+
 ## Quick reference
 
 ```bash
@@ -53,4 +70,5 @@ devhost doctor  # diagnose the local devhost setup
 If devhost is not installed on the machine, dev servers still run — they just
 bind `localhost` normally and lose per-worktree isolation. Do not attempt to
 install devhost yourself unless the user asks; it needs a one-time
-`devhost setup`.
+`devhost setup`. Container isolation additionally needs `DOCKER_HOST` pointed
+at the devhost proxy; without it, containers bind the shared host as usual.

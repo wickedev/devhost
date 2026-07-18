@@ -95,6 +95,34 @@ killed. For clients whose working directory is *outside* the project — a
 browser opened from the Dock, a shared browser over CDP — use the stable
 name instead: `baseURL: "http://storefront.devhost:3000"`.
 
+## Containers too — Docker and OrbStack
+
+Containers publish host ports through the runtime (dockerd, OrbStack), which
+devhost can't inject a `bind()` interposer into — the bind happens as root or
+inside a VM. So devhost sits in front of the Docker API socket instead: it
+identifies the calling `docker` / `docker compose` process by the socket peer
+credential, resolves its `.devhost` project, and rewrites each published port
+onto that project's IP. Two projects can then both `-p 3000:3000` without
+colliding, exactly like host dev servers.
+
+Point Docker at the proxy once — `devhost daemon` runs it, and `devhost setup`
+prints the line:
+
+```sh
+export DOCKER_HOST="unix://$HOME/.config/devhost/docker.sock"
+```
+
+```sh
+# ~/work/storefront                    # ~/work/storefront-cart-fix — same time
+docker compose up                      docker compose up
+#  published → 127.77.60.193:3000      #  published → 127.77.40.164:3000
+#  → http://storefront.devhost:3000    #  → http://storefront-cart-fix.devhost:3000
+```
+
+Only the host-side publish moves; the container-internal port (the right-hand
+`:3000`) is untouched. A container started outside any `.devhost` tree — or one
+with an explicit non-loopback `-p 1.2.3.4:3000:3000` — passes through unchanged.
+
 ## For AI coding agents
 
 If you drive this project with an AI coding agent, teach it not to fight
@@ -106,6 +134,12 @@ worktree's server):
 npx skills add wickedev/devhost   # works with Claude Code, Cursor, Copilot, Cline, +14 more
 ```
 
+`devhost setup` installs it for you and `devhost upgrade` keeps it in sync with
+the binary; `devhost doctor` flags it when it drifts from the published version
+(so a `brew upgrade` that only moves the binary doesn't leave the skill behind).
+The skill covers containers too — agents run `docker compose up` normally and
+never move a published port or kill a container to free one.
+
 The skill lives at [`skills/devhost/SKILL.md`](skills/devhost/SKILL.md) —
 tool-neutral, so it's just as useful pasted into an `AGENTS.md` or `CLAUDE.md`.
 
@@ -116,11 +150,11 @@ tool-neutral, so it's just as useful pasted into an `AGENTS.md` or `CLAUDE.md`.
 | `devhost init [dir]` | create the `.devhost` marker |
 | `devhost ip` / `name` | print the project IP / hostname label |
 | `devhost exec -- CMD` | run any command with the project env applied |
-| `devhost setup` | one-shot machine setup: shims, PATH, daemon service, root helper (`--no-*` flags opt out) |
-| `devhost daemon` | localhost mirror-router |
+| `devhost setup` | one-shot machine setup: shims, PATH, daemon service, root helper, agent skill (`--no-*` flags opt out) |
+| `devhost daemon` | localhost mirror-router, `.devhost` DNS, and Docker port-isolation proxy |
 | `devhost ls` | active devhost listeners |
-| `devhost doctor` | diagnose the installation (also mentions when an update is available) |
-| `devhost upgrade` | update devhost to the latest release |
+| `devhost doctor` | diagnose the installation (flags an available update or a stale agent skill) |
+| `devhost upgrade` | update devhost to the latest release (and refresh the agent skill) |
 
 ## Privilege
 
