@@ -8,54 +8,70 @@ import (
 	"strings"
 )
 
+// PathEdit records one profile file touched (or found already configured)
+// while wiring the shell environment.
+type PathEdit struct {
+	Profile string
+	Added   bool
+}
+
 // AppendPathToProfile ensures dir is put on PATH by the user's shell
-// profile. The export line is appended at the END of the file so it lands
+// profiles. The export line is appended at the END of each file so it lands
 // after any version manager init — the shim must win the PATH race against
-// asdf/mise/nvm entries that those inits prepend. Returns the profile path
-// and whether a line was actually added (false means dir was already
-// mentioned there). Shells other than zsh/bash/fish return an error so the
-// caller can fall back to printing manual instructions.
-func AppendPathToProfile(dir string) (profile string, added bool, err error) {
+// asdf/mise/nvm entries that those inits prepend. zsh gets the line in BOTH
+// ~/.zshenv and ~/.zshrc: non-interactive shells (agents, scripts, CI) read
+// only .zshenv, while in interactive shells the .zshrc copy re-prepends past
+// version managers and macOS path_helper. Returns one edit per file
+// (Added=false means dir was already mentioned there). Shells other than
+// zsh/bash/fish return an error so the caller can fall back to printing
+// manual instructions.
+func AppendPathToProfile(dir string) ([]PathEdit, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", false, err
+		return nil, err
 	}
-	profile, line, err := profileLine(os.Getenv("SHELL"), home, runtime.GOOS, dir)
+	shell := os.Getenv("SHELL")
+	profiles, err := profilePaths(shell, home, runtime.GOOS)
 	if err != nil {
-		return "", false, err
+		return nil, err
 	}
-	added, err = appendOnce(profile, line, dir, home)
-	return profile, added, err
-}
-
-// profileLine picks the rc file and PATH syntax for the login shell.
-func profileLine(shell, home, goos, dir string) (profile, line string, err error) {
-	profile, err = profilePath(shell, home, goos)
-	if err != nil {
-		return "", "", err
-	}
+	line := exportLine(dir)
 	if filepath.Base(shell) == "fish" {
-		return profile, fmt.Sprintf("fish_add_path --path %q", dir), nil
+		line = fmt.Sprintf("fish_add_path --path %q", dir)
 	}
-	return profile, exportLine(dir), nil
+	var edits []PathEdit
+	for _, p := range profiles {
+		added, err := appendOnce(p, line, dir, home)
+		if err != nil {
+			return edits, err
+		}
+		edits = append(edits, PathEdit{Profile: p, Added: added})
+	}
+	return edits, nil
 }
 
-// profilePath returns the login shell's rc file (zsh/bash/fish), or an error
-// for shells devhost doesn't know how to edit.
-func profilePath(shell, home, goos string) (string, error) {
+// profilePaths returns the rc files that must carry devhost's environment
+// for the login shell. zsh needs two: .zshrc alone only covers interactive
+// shells, and a dev server launched by an agent or script (`zsh -c ...`)
+// reads nothing but .zshenv. bash has no file at all for non-interactive
+// shells (a documented gap); fish's config.fish covers both modes.
+func profilePaths(shell, home, goos string) ([]string, error) {
 	switch filepath.Base(shell) {
 	case "zsh":
-		return filepath.Join(home, ".zshrc"), nil
+		return []string{
+			filepath.Join(home, ".zshenv"),
+			filepath.Join(home, ".zshrc"),
+		}, nil
 	case "bash":
 		rc := ".bashrc"
 		if goos == "darwin" { // macOS bash login shells read .bash_profile
 			rc = ".bash_profile"
 		}
-		return filepath.Join(home, rc), nil
+		return []string{filepath.Join(home, rc)}, nil
 	case "fish":
-		return filepath.Join(home, ".config", "fish", "config.fish"), nil
+		return []string{filepath.Join(home, ".config", "fish", "config.fish")}, nil
 	default:
-		return "", fmt.Errorf("don't know the profile file for shell %q", shell)
+		return nil, fmt.Errorf("don't know the profile file for shell %q", shell)
 	}
 }
 
@@ -79,20 +95,28 @@ func DockerHostProfileEntry() (marker, line string, err error) {
 	return marker, line, nil
 }
 
-// AppendLineToProfile appends line to the login shell's rc file unless marker
-// already appears there. For devhost-managed entries beyond PATH (a guarded
-// DOCKER_HOST export). Returns the profile path and whether a line was added.
-func AppendLineToProfile(marker, line string) (profile string, added bool, err error) {
+// AppendLineToProfile appends line to each of the login shell's rc files
+// unless marker already appears there. For devhost-managed entries beyond
+// PATH (a guarded DOCKER_HOST export) — written to the same file set as the
+// PATH line, so agent/script shells get them too. Returns one edit per file.
+func AppendLineToProfile(marker, line string) ([]PathEdit, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", false, err
+		return nil, err
 	}
-	profile, err = profilePath(os.Getenv("SHELL"), home, runtime.GOOS)
+	profiles, err := profilePaths(os.Getenv("SHELL"), home, runtime.GOOS)
 	if err != nil {
-		return "", false, err
+		return nil, err
 	}
-	added, err = appendMarkedOnce(profile, marker, line)
-	return profile, added, err
+	var edits []PathEdit
+	for _, p := range profiles {
+		added, err := appendMarkedOnce(p, marker, line)
+		if err != nil {
+			return edits, err
+		}
+		edits = append(edits, PathEdit{Profile: p, Added: added})
+	}
+	return edits, nil
 }
 
 // appendMarkedOnce appends line unless the file already contains marker.

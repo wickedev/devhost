@@ -7,30 +7,69 @@ import (
 	"testing"
 )
 
-func TestProfileLine(t *testing.T) {
+func TestProfilePaths(t *testing.T) {
 	cases := []struct {
-		shell, goos     string
-		wantRC, wantSub string
+		shell, goos string
+		wantRCs     []string
 	}{
-		{"/bin/zsh", "darwin", ".zshrc", `export PATH="/x/shims:$PATH"`},
-		{"/bin/bash", "darwin", ".bash_profile", `export PATH="/x/shims:$PATH"`},
-		{"/usr/bin/bash", "linux", ".bashrc", `export PATH="/x/shims:$PATH"`},
-		{"/opt/homebrew/bin/fish", "darwin", "config.fish", `fish_add_path --path "/x/shims"`},
+		// zsh needs both: non-interactive shells read only .zshenv, and the
+		// .zshrc copy re-prepends past version managers in interactive ones.
+		{"/bin/zsh", "darwin", []string{".zshenv", ".zshrc"}},
+		{"/bin/bash", "darwin", []string{".bash_profile"}},
+		{"/usr/bin/bash", "linux", []string{".bashrc"}},
+		{"/opt/homebrew/bin/fish", "darwin", []string{"config.fish"}},
 	}
 	for _, c := range cases {
-		profile, line, err := profileLine(c.shell, "/home/u", c.goos, "/x/shims")
+		profiles, err := profilePaths(c.shell, "/home/u", c.goos)
 		if err != nil {
 			t.Fatalf("%s: %v", c.shell, err)
 		}
-		if filepath.Base(profile) != c.wantRC {
-			t.Errorf("%s: profile = %s, want base %s", c.shell, profile, c.wantRC)
+		if len(profiles) != len(c.wantRCs) {
+			t.Fatalf("%s: profiles = %v, want %v", c.shell, profiles, c.wantRCs)
 		}
-		if line != c.wantSub {
-			t.Errorf("%s: line = %q, want %q", c.shell, line, c.wantSub)
+		for i, p := range profiles {
+			if filepath.Base(p) != c.wantRCs[i] {
+				t.Errorf("%s: profile[%d] = %s, want base %s", c.shell, i, p, c.wantRCs[i])
+			}
 		}
 	}
-	if _, _, err := profileLine("/bin/tcsh", "/home/u", "linux", "/x"); err == nil {
+	if _, err := profilePaths("/bin/tcsh", "/home/u", "linux"); err == nil {
 		t.Error("tcsh: want error for unsupported shell")
+	}
+}
+
+func TestAppendPathToProfileZshBothFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/zsh")
+	dir := filepath.Join(home, ".config", "devhost", "shims")
+
+	edits, err := AppendPathToProfile(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edits) != 2 {
+		t.Fatalf("edits = %+v, want .zshenv and .zshrc", edits)
+	}
+	for _, e := range edits {
+		if !e.Added {
+			t.Errorf("%s: not added on first run", e.Profile)
+		}
+		data, err := os.ReadFile(e.Profile)
+		if err != nil || !strings.Contains(string(data), exportLine(dir)) {
+			t.Errorf("%s: export line missing (err=%v)", e.Profile, err)
+		}
+	}
+
+	// Second run is a no-op on both files.
+	edits, err = AppendPathToProfile(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range edits {
+		if e.Added {
+			t.Errorf("%s: added again on second run", e.Profile)
+		}
 	}
 }
 
@@ -117,20 +156,30 @@ func TestAppendLineToProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	profile, added, err := AppendLineToProfile(marker, line)
-	if err != nil || !added {
-		t.Fatalf("first append: added=%v err=%v", added, err)
+	edits, err := AppendLineToProfile(marker, line)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if filepath.Base(profile) != ".zshrc" {
-		t.Fatalf("profile = %s, want .zshrc", profile)
+	if len(edits) != 2 || filepath.Base(edits[0].Profile) != ".zshenv" || filepath.Base(edits[1].Profile) != ".zshrc" {
+		t.Fatalf("edits = %+v, want .zshenv then .zshrc", edits)
 	}
-	if data, _ := os.ReadFile(profile); !strings.Contains(string(data), line) {
-		t.Fatalf("line missing:\n%s", data)
+	for _, e := range edits {
+		if !e.Added {
+			t.Errorf("%s: not added on first run", e.Profile)
+		}
+		if data, _ := os.ReadFile(e.Profile); !strings.Contains(string(data), line) {
+			t.Errorf("%s: line missing:\n%s", e.Profile, data)
+		}
 	}
 
 	// Idempotent: the marker is already present, so no second line.
-	_, added, err = AppendLineToProfile(marker, line)
-	if err != nil || added {
-		t.Fatalf("second append: added=%v err=%v", added, err)
+	edits, err = AppendLineToProfile(marker, line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range edits {
+		if e.Added {
+			t.Errorf("%s: added again on second run", e.Profile)
+		}
 	}
 }
