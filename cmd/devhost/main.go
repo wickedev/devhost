@@ -36,6 +36,8 @@ func main() {
 		err = cmdExec(args)
 	case "shim-exec":
 		err = cmdShimExec(args)
+	case "shim":
+		err = cmdShim(args)
 	case "setup":
 		err = cmdSetup(args)
 	case "daemon":
@@ -70,6 +72,9 @@ Usage:
   devhost ip [dir]          print the project's loopback IP
   devhost name [dir]        print the project's hostname label (<name>.devhost)
   devhost exec -- CMD ...   run CMD with the project environment applied
+  devhost shim add TOOL...  shim extra launchers (defaults cover node, python,
+                            ruby, cargo, go) — anything a native or scripted
+                            dev server starts through; rm / ls manage the set
   devhost setup             one-shot machine setup: shims, PATH, daemon
                             service (launchd/systemd), root helper, agent skill,
                             DOCKER_HOST (--no-profile / --no-daemon /

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -263,6 +264,70 @@ func cmdShimExec(args []string) error {
 	return syscall.Exec(real, append([]string{tool}, rest...), env)
 }
 
+// cmdShim manages shims for launchers beyond DefaultTools. Shims are the
+// isolation path for native dev servers too: a locally-built (non-Apple,
+// non-hardened) binary run through a shimmed launcher inherits the bind()
+// interposer, because the shim re-injects at the final exec — after any
+// SIP-protected hop (make, /bin/sh) has stripped DYLD_*.
+func cmdShim(args []string) error {
+	usageErr := errors.New("usage: devhost shim add TOOL... | rm TOOL... | ls")
+	if len(args) == 0 {
+		return usageErr
+	}
+	switch args[0] {
+	case "add":
+		if len(args) < 2 {
+			return usageErr
+		}
+		for _, tool := range args[1:] {
+			if _, err := shim.RealBinary(tool); err != nil {
+				return fmt.Errorf("%q not found on PATH — a shim must never shadow a tool that isn't installed", tool)
+			}
+			added, err := shim.AddCustom(tool)
+			if err != nil {
+				return err
+			}
+			if !added {
+				fmt.Printf("%s: already shimmed\n", tool)
+			}
+		}
+		dir, installed, err := shim.Install(shim.AllTools())
+		if err != nil {
+			return err
+		}
+		fmt.Printf("installed shims: %s (%s)\n", dir, strings.Join(installed, ", "))
+		return nil
+	case "rm":
+		if len(args) < 2 {
+			return usageErr
+		}
+		for _, tool := range args[1:] {
+			removed, err := shim.RemoveCustom(tool)
+			if err != nil {
+				return err
+			}
+			if removed {
+				fmt.Printf("removed shim: %s\n", tool)
+			} else if slices.Contains(shim.DefaultTools, tool) {
+				fmt.Printf("%s: a default shim, managed by `devhost setup`\n", tool)
+			} else {
+				fmt.Printf("%s: not shimmed\n", tool)
+			}
+		}
+		return nil
+	case "ls":
+		for _, tool := range shim.DefaultTools {
+			fmt.Printf("%s (default)\n", tool)
+		}
+		for _, tool := range shim.CustomTools() {
+			fmt.Println(tool)
+		}
+		return nil
+	default:
+		return usageErr
+	}
+}
+
 func cmdSetup(args []string) error {
 	noProfile, noDaemon, noHelper, noSkill, noDocker := false, false, false, false, false
 	for _, a := range args {
@@ -289,7 +354,7 @@ func cmdSetup(args []string) error {
 			noDocker = true
 		}
 	}
-	dir, installed, err := shim.Install(shim.DefaultTools)
+	dir, installed, err := shim.Install(shim.AllTools())
 	if err != nil {
 		return err
 	}
@@ -616,6 +681,16 @@ func cmdDoctor(args []string) error {
 	report(err == nil, "listener scan", fmt.Sprint(err))
 	if err == nil {
 		fmt.Printf("  %d active devhost listener port(s)\n", len(ports))
+	}
+
+	if escapes := daemon.EscapedListeners(); len(escapes) > 0 {
+		report(false, "servers that escaped isolation (bound plain loopback from a devhost project)",
+			"relaunch via `devhost exec -- ...`, or shim their launcher: devhost shim add TOOL")
+		for _, e := range escapes {
+			fmt.Printf("    %s (pid %d) :%d — project %s\n", e.Command, e.PID, e.Port, e.Root)
+		}
+	} else {
+		report(true, "no escaped listeners", "")
 	}
 
 	if latest, err := selfupdate.Latest(); err != nil {

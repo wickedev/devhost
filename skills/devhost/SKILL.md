@@ -25,8 +25,12 @@ file, and/or `devhost` is on PATH.
 ## Rules
 
 1. **Run dev servers normally.** Just `npm run dev`, `flask run`, `rails s`,
-   `go run ./...`, etc. devhost transparently rebinds the server to this
-   project's IP. Do not pass a custom host or IP.
+   `go run ./...`, `cargo run`, etc. devhost transparently rebinds the server
+   — including locally-built native binaries — to this project's IP. Do not
+   pass a custom host or IP. If a server ends up on plain `127.0.0.1` anyway
+   (`devhost doctor` lists it under "escaped isolation"), its launcher isn't
+   shimmed: run it via `devhost exec -- CMD`, or add a shim for the launcher
+   with `devhost shim add TOOL` and restart the server.
 
 2. **Never change the port to avoid a conflict.** Do NOT set `PORT=13001`,
    `--port 3001`, or edit config to move off `:3000`. Port collisions between
@@ -61,10 +65,13 @@ file, and/or `devhost` is on PATH.
 ## Quick reference
 
 ```bash
-devhost name    # this project's hostname label -> <name>.devhost
-devhost ip      # this project's loopback IP (127.77.x.y)
-devhost ls      # active devhost dev-server listeners
-devhost doctor  # diagnose the local devhost setup
+devhost name          # this project's hostname label -> <name>.devhost
+devhost ip            # this project's loopback IP (127.77.x.y)
+devhost ls            # active devhost dev-server listeners
+devhost doctor        # diagnose the setup; lists servers that escaped isolation
+devhost shim add TOOL # shim an extra launcher (defaults: node, python, python3,
+                      # ruby, cargo, go) so servers it starts get isolated
+devhost exec -- CMD   # one-off: run CMD with the project env, no shim needed
 ```
 
 If devhost is not installed on the machine, dev servers still run — they just

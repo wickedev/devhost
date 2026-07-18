@@ -32,14 +32,17 @@ per worktree, fixed ports stop being a convention and start being a fight.
    Same path → same IP, different worktree → different IP. On macOS the IP is
    auto-registered as an `lo0` alias; on Linux all of `127.0.0.0/8` already
    routes.
-3. **Transparent rebinding.** A PATH shim (asdf-style) wraps runtime
-   launchers (`node`, `python3`, `ruby`, ...). Inside a `.devhost` tree it
-   loads a tiny `bind()` interposer at the final exec, so `next dev`,
-   `flask run`, `rails s` — anything on a dynamically-linked runtime — binds
-   the project IP instead of `0.0.0.0`/`localhost`. The interposer computes
-   the IP itself from the process's working directory: no HOST, no PORT, no
-   app config. Zero project configuration. Outside a marked tree the shim is
-   a pass-through.
+3. **Transparent rebinding.** A PATH shim (asdf-style) wraps runtime and
+   build launchers (`node`, `python3`, `ruby`, `cargo`, `go`, ...). Inside a
+   `.devhost` tree it loads a tiny `bind()` interposer at the final exec, so
+   `next dev`, `flask run`, `rails s` — and native servers via `cargo run` /
+   `go run`, since locally-built binaries accept injection — bind the project
+   IP instead of `0.0.0.0`/`localhost`. The interposer computes the IP itself
+   from the process's working directory: no HOST, no PORT, no app config.
+   Zero project configuration. Outside a marked tree the shim is a
+   pass-through. `devhost shim add TOOL` extends the set to any other
+   launcher, and `devhost doctor` names any server that slipped past the
+   shims onto plain loopback.
 4. **Names.** `<dirname>.devhost` resolves to the project IP, so the browser
    URL is stable and human. On macOS a tiny built-in DNS responder serves the
    `.devhost` TLD (via `/etc/resolver/devhost`), so nothing writes to
@@ -154,10 +157,11 @@ tool-neutral, so it's just as useful pasted into an `AGENTS.md` or `CLAUDE.md`.
 | `devhost init [dir]` | create the `.devhost` marker |
 | `devhost ip` / `name` | print the project IP / hostname label |
 | `devhost exec -- CMD` | run any command with the project env applied |
+| `devhost shim add/rm/ls TOOL` | manage shimmed launchers beyond the defaults (e.g. `dotnet`, a custom run script) |
 | `devhost setup` | one-shot machine setup: shims, PATH, daemon service, root helper, agent skill (`--no-*` flags opt out) |
 | `devhost daemon` | localhost mirror-router, `.devhost` DNS, and Docker port-isolation proxy |
 | `devhost ls` | active devhost listeners |
-| `devhost doctor` | diagnose the installation (flags an available update or a stale agent skill) |
+| `devhost doctor` | diagnose the installation (flags escaped listeners, an available update, or a stale agent skill) |
 | `devhost upgrade` | update devhost to the latest release (and refresh the agent skill) |
 
 ## Privilege

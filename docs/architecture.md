@@ -58,6 +58,18 @@ again). On Linux there is nothing to resurrect: `LD_PRELOAD` survives shell
 chains, and `/etc/ld.so.preload` can load the interposer with zero
 environment variables anywhere.
 
+The same late injection covers **native dev servers**. A binary you build
+locally (`cargo run`, `go run`) is not an Apple platform binary and carries
+no hardened runtime, so dyld injects into it happily — only the Apple-signed
+hops in the middle of a chain (`/usr/bin/make`, `/bin/sh`) strip the
+variable, and a shim past them re-arms it. `cargo` and `go` are therefore
+shimmed by default, and `devhost shim add TOOL` extends the set to any other
+launcher (persisted, so `devhost setup` re-installs it). Because the shim set
+is an enumeration, `devhost doctor` closes the loop on anything missed: it
+flags listeners bound to plain loopback or the wildcard by a process whose
+cwd sits inside a `.devhost` project, naming the process and port so the fix
+(`devhost exec` or a new shim) is one command away.
+
 The interposer rewrites IPv6 too: a `::`/`::1` bind becomes the IPv4-mapped
 project address `::ffff:127.77.x.y` (with `IPV6_V6ONLY` cleared), which a v4
 client reaches at the project IP — so dual-stack servers isolate the same way.
