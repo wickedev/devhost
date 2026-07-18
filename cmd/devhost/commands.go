@@ -495,15 +495,18 @@ func setupPath(shimDir string, noProfile bool) {
 		manual = dirs
 	} else {
 		for _, d := range dirs {
-			profile, added, err := shim.AppendPathToProfile(d)
-			switch {
-			case err != nil:
+			edits, err := shim.AppendPathToProfile(d)
+			if err != nil {
 				fmt.Printf("could not edit shell profile: %v\n", err)
 				manual = append(manual, d)
-			case added:
-				fmt.Printf("added to %s: export PATH=\"%s:$PATH\"\n", profile, d)
-			default:
-				fmt.Printf("%s already puts %s on PATH\n", profile, d)
+				continue
+			}
+			for _, e := range edits {
+				if e.Added {
+					fmt.Printf("added to %s: export PATH=\"%s:$PATH\"\n", e.Profile, d)
+				} else {
+					fmt.Printf("%s already puts %s on PATH\n", e.Profile, d)
+				}
 			}
 		}
 		if len(manual) < len(dirs) {
@@ -512,7 +515,9 @@ func setupPath(shimDir string, noProfile bool) {
 	}
 	if len(manual) > 0 {
 		fmt.Println("\nAdd to your shell profile, AFTER any version manager init")
-		fmt.Println("(the shim must win the PATH race, then hand off to it):")
+		fmt.Println("(the shim must win the PATH race, then hand off to it —")
+		fmt.Println(" zsh: put it in BOTH ~/.zshenv and ~/.zshrc so agent/script")
+		fmt.Println(" shells, which read only .zshenv, get it too):")
 		fmt.Println()
 		for _, d := range manual {
 			fmt.Printf("  export PATH=\"%s:$PATH\"\n", d)
@@ -554,14 +559,17 @@ func setupDockerHost(skip bool) {
 		fmt.Printf("  container ports: add to your profile —\n    export DOCKER_HOST=unix://%s\n", sock)
 		return
 	}
-	profile, added, err := shim.AppendLineToProfile(marker, line)
-	switch {
-	case err != nil:
+	edits, err := shim.AppendLineToProfile(marker, line)
+	if err != nil {
 		fmt.Printf("  container ports: couldn't edit profile (%v); add by hand —\n    export DOCKER_HOST=unix://%s\n", err, sock)
-	case added:
-		fmt.Printf("  container ports: added a guarded DOCKER_HOST export to %s\n    (Docker uses the devhost proxy when the daemon is up; restart your shell)\n", profile)
-	default:
-		fmt.Printf("  container ports: %s already points Docker at the devhost proxy\n", profile)
+		return
+	}
+	for _, e := range edits {
+		if e.Added {
+			fmt.Printf("  container ports: added a guarded DOCKER_HOST export to %s\n    (Docker uses the devhost proxy when the daemon is up; restart your shell)\n", e.Profile)
+		} else {
+			fmt.Printf("  container ports: %s already points Docker at the devhost proxy\n", e.Profile)
+		}
 	}
 }
 
@@ -665,6 +673,18 @@ func cmdDoctor(args []string) error {
 		}
 	}
 	report(onPath, "shim dir on PATH ("+shimDir+")", "run `devhost setup` and add the printed export line")
+
+	// The current shell having the shims proves nothing about the shells
+	// agents and scripts get: non-interactive zsh reads only ~/.zshenv. Ask a
+	// fresh non-interactive shell for its PATH and check the shim dir is
+	// there — this is exactly how an agent-launched dev server escapes.
+	if shell := os.Getenv("SHELL"); shell != "" {
+		if out, err := exec.Command(shell, "-c", `printf %s "$PATH"`).Output(); err == nil {
+			niOnPath := slices.Contains(filepath.SplitList(string(out)), shimDir)
+			report(niOnPath, "shim dir on PATH in non-interactive shells (agents, scripts)",
+				"servers launched by agents/scripts bypass the shims — rerun `devhost setup` (zsh: it adds the export to ~/.zshenv too)")
+		}
+	}
 
 	if lib, err := interpose.Ensure(); err != nil {
 		report(false, "bind() interposer", err.Error())

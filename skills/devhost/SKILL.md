@@ -29,9 +29,11 @@ PATH.
    `go run ./...`, `cargo run`, etc. devhost transparently rebinds the server
    — including locally-built native binaries — to this project's IP. Do not
    pass a custom host or IP. If a server ends up on plain `127.0.0.1` anyway
-   (`devhost doctor` lists it under "escaped isolation"), its launcher isn't
-   shimmed: run it via `devhost exec -- CMD`, or add a shim for the launcher
-   with `devhost shim add TOOL` and restart the server.
+   (`devhost doctor` lists it under "escaped isolation"), either its launcher
+   isn't shimmed — run it via `devhost exec -- CMD`, or `devhost shim add
+   TOOL` and restart — or the shim dir isn't on PATH in this (non-interactive)
+   shell: doctor has a dedicated check for that; `devhost setup` fixes it by
+   writing the export to the right profile files (zsh: `~/.zshenv` too).
 
 2. **Never change the port to avoid a conflict.** Do NOT set `PORT=13001`,
    `--port 3001`, or edit config to move off `:3000`. Port collisions between
