@@ -65,10 +65,13 @@ file, and/or `devhost` is on PATH.
 ## Quick reference
 
 ```bash
-devhost name    # this project's hostname label -> <name>.devhost
-devhost ip      # this project's loopback IP (127.77.x.y)
-devhost ls      # active devhost dev-server listeners
-devhost doctor  # diagnose the local devhost setup
+devhost name          # this project's hostname label -> <name>.devhost
+devhost ip            # this project's loopback IP (127.77.x.y)
+devhost ls            # active devhost dev-server listeners
+devhost doctor        # diagnose the setup; lists servers that escaped isolation
+devhost shim add TOOL # shim an extra launcher (defaults: node, python, python3,
+                      # ruby, cargo, go) so servers it starts get isolated
+devhost exec -- CMD   # one-off: run CMD with the project env, no shim needed
 ```
 
 If devhost is not installed on the machine, dev servers still run — they just
