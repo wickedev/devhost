@@ -19,8 +19,9 @@ devhost's proxy, `docker compose up` or `docker run -p 3000:3000` in different
 projects publish to different loopback IPs, so containers never fight over a
 host port either.
 
-Detect it: the project (or an ancestor) contains an empty `.devhost` marker
-file, and/or `devhost` is on PATH.
+Detect it: the project (or an ancestor) contains a `.devhost` marker file
+(possibly empty, possibly a self-describing comment), and/or `devhost` is on
+PATH.
 
 ## Rules
 
@@ -70,7 +71,9 @@ devhost ip            # this project's loopback IP (127.77.x.y)
 devhost ls            # active devhost dev-server listeners
 devhost doctor        # diagnose the setup; lists servers that escaped isolation
 devhost shim add TOOL # shim an extra launcher (defaults: node, python, python3,
-                      # ruby, cargo, go) so servers it starts get isolated
+                      # ruby, cargo, go) so servers it starts get isolated;
+                      # run inside the project it writes a `shim: TOOL` line
+                      # into .devhost — commit that so checkouts inherit it
 devhost exec -- CMD   # one-off: run CMD with the project env, no shim needed
 ```
 

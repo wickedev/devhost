@@ -91,6 +91,23 @@ func AddCustom(tool string) (bool, error) {
 	return true, os.WriteFile(customFile(), []byte(strings.Join(tools, "\n")+"\n"), 0o644)
 }
 
+// EnsureInstalled writes shims for any of tools that lack one — the
+// activation-time path for project-declared launchers, cheap enough (one
+// stat per tool) to run on every exec.
+func EnsureInstalled(tools []string) error {
+	var missing []string
+	for _, t := range tools {
+		if _, err := os.Stat(filepath.Join(Dir(), t)); err != nil {
+			missing = append(missing, t)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	_, _, err := Install(missing)
+	return err
+}
+
 // RemoveCustom drops tool from the custom set and deletes its shim. Returns
 // false if it wasn't a custom tool.
 func RemoveCustom(tool string) (bool, error) {

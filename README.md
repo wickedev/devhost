@@ -26,8 +26,10 @@ per worktree, fixed ports stop being a convention and start being a fight.
 
 ## How it works
 
-1. **Marker.** A project opts in with an empty `.devhost` file at its root
-   (like `.tool-versions`). Commit it — worktrees inherit it automatically.
+1. **Marker.** A project opts in with a `.devhost` file at its root (like
+   `.tool-versions`). Commit it — worktrees inherit it automatically.
+   `devhost init` fills it with a short comment explaining itself to anyone
+   who finds it in the repo; only the file's existence matters.
 2. **Deterministic IP.** The project root path is hashed into `127.77.0.0/16`.
    Same path → same IP, different worktree → different IP. On macOS the IP is
    auto-registered as an `lo0` alias; on Linux all of `127.0.0.0/8` already
@@ -41,8 +43,10 @@ per worktree, fixed ports stop being a convention and start being a fight.
    from the process's working directory: no HOST, no PORT, no app config.
    Zero project configuration. Outside a marked tree the shim is a
    pass-through. `devhost shim add TOOL` extends the set to any other
-   launcher, and `devhost doctor` names any server that slipped past the
-   shims onto plain loopback.
+   launcher — recorded as a `shim: TOOL` line in the project's `.devhost`,
+   so the repo carries its launcher list and every checkout self-provisions
+   (`--global` records machine-wide instead) — and `devhost doctor` names
+   any server that slipped past the shims onto plain loopback.
 4. **Names.** `<dirname>.devhost` resolves to the project IP, so the browser
    URL is stable and human. On macOS a tiny built-in DNS responder serves the
    `.devhost` TLD (via `/etc/resolver/devhost`), so nothing writes to
@@ -157,7 +161,7 @@ tool-neutral, so it's just as useful pasted into an `AGENTS.md` or `CLAUDE.md`.
 | `devhost init [dir]` | create the `.devhost` marker |
 | `devhost ip` / `name` | print the project IP / hostname label |
 | `devhost exec -- CMD` | run any command with the project env applied |
-| `devhost shim add/rm/ls TOOL` | manage shimmed launchers beyond the defaults (e.g. `dotnet`, a custom run script) |
+| `devhost shim add/rm/ls TOOL` | manage shimmed launchers beyond the defaults — declared in the project's `.devhost` (committable), or machine-wide with `--global` |
 | `devhost setup` | one-shot machine setup: shims, PATH, daemon service, root helper, agent skill (`--no-*` flags opt out) |
 | `devhost daemon` | localhost mirror-router, `.devhost` DNS, and Docker port-isolation proxy |
 | `devhost ls` | active devhost listeners |

@@ -74,7 +74,10 @@ Usage:
   devhost exec -- CMD ...   run CMD with the project environment applied
   devhost shim add TOOL...  shim extra launchers (defaults cover node, python,
                             ruby, cargo, go) — anything a native or scripted
-                            dev server starts through; rm / ls manage the set
+                            dev server starts through. Inside a project this
+                            writes a committable "shim: TOOL" line into
+                            .devhost; --global records machine-wide instead;
+                            rm / ls manage the set
   devhost setup             one-shot machine setup: shims, PATH, daemon
                             service (launchd/systemd), root helper, agent skill,
                             DOCKER_HOST (--no-profile / --no-daemon /
