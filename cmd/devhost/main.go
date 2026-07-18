@@ -11,7 +11,6 @@ import (
 	"os"
 
 	"github.com/wickedev/devhost/internal/daemon"
-	"github.com/wickedev/devhost/internal/selfupdate"
 )
 
 // version is injected by goreleaser (-X main.version) on release builds.
@@ -46,7 +45,7 @@ func main() {
 	case "doctor":
 		err = cmdDoctor(args)
 	case "upgrade":
-		err = selfupdate.Upgrade(version, os.Stdout)
+		err = cmdUpgrade(args)
 	case "version":
 		fmt.Println(version)
 	case "help", "-h", "--help":
@@ -72,12 +71,14 @@ Usage:
   devhost name [dir]        print the project's hostname label (<name>.devhost)
   devhost exec -- CMD ...   run CMD with the project environment applied
   devhost setup             one-shot machine setup: shims, PATH, daemon
-                            service (launchd/systemd), root helper
-                            (--no-profile / --no-daemon / --no-helper
-                            skip parts; --daemon-remove unregisters)
+                            service (launchd/systemd), root helper, agent skill
+                            (--no-profile / --no-daemon / --no-helper /
+                            --no-skill skip parts; --daemon-remove unregisters)
+  devhost setup --skill     install/refresh the agent skill (via skills.sh)
   devhost setup --helper    install the narrow root helper (one-time sudo)
   devhost setup --preload   (linux) load the interposer via /etc/ld.so.preload
-  devhost daemon            run the localhost mirror-router (devhostd)
+  devhost daemon            run the localhost mirror-router + .devhost DNS +
+                            Docker port-isolation proxy (devhostd)
   devhost ls                list active devhost listeners
   devhost doctor            diagnose the local installation
   devhost upgrade           update devhost to the latest release

@@ -40,6 +40,20 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
+	// Docker socket proxy: per-project container port isolation. Best-effort —
+	// skipped when no Docker runtime is present.
+	if sock := ProxySocket(); true {
+		if up := ResolveUpstream(sock); up != "" {
+			go func() {
+				if err := RunDockerProxy(ctx, sock, up); err != nil {
+					log.Printf("docker proxy: %v", err)
+				}
+			}()
+		} else {
+			log.Printf("docker proxy: no Docker socket found; skipping (set DEVHOST_DOCKER_UPSTREAM to enable)")
+		}
+	}
+
 	r := &router{mirrors: map[int]net.Listener{}}
 	log.Printf("mirror-router started (scan every %s); dns responder on 127.0.0.1:%d", scanInterval, dnsserver.Port)
 	ticker := time.NewTicker(scanInterval)

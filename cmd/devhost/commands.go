@@ -29,6 +29,7 @@ import (
 	"github.com/wickedev/devhost/internal/selfupdate"
 	"github.com/wickedev/devhost/internal/service"
 	"github.com/wickedev/devhost/internal/shim"
+	"github.com/wickedev/devhost/internal/skills"
 )
 
 // rootFrom resolves the project root for an optional [dir] argument,
@@ -263,7 +264,7 @@ func cmdShimExec(args []string) error {
 }
 
 func cmdSetup(args []string) error {
-	noProfile, noDaemon, noHelper := false, false, false
+	noProfile, noDaemon, noHelper, noSkill := false, false, false, false
 	for _, a := range args {
 		switch a {
 		case "--helper":
@@ -274,12 +275,16 @@ func cmdSetup(args []string) error {
 			return interpose.PreloadRemove()
 		case "--daemon-remove":
 			return service.Remove()
+		case "--skill":
+			return skills.Refresh(os.Stdout)
 		case "--no-profile":
 			noProfile = true
 		case "--no-daemon":
 			noDaemon = true
 		case "--no-helper":
 			noHelper = true
+		case "--no-skill":
+			noSkill = true
 		}
 	}
 	dir, installed, err := shim.Install(shim.DefaultTools)
@@ -302,6 +307,9 @@ func cmdSetup(args []string) error {
 		fmt.Println("  localhost routing needs `devhost daemon` running; register it by hand or rerun setup")
 	} else {
 		fmt.Println("\nregistered daemon service:", service.Kind(), "(localhost routing + .devhost DNS)")
+		if daemon.ResolveUpstream(daemon.ProxySocket()) != "" {
+			fmt.Printf("  container ports: isolate them per project by pointing Docker at the proxy —\n    export DOCKER_HOST=unix://%s\n", daemon.ProxySocket())
+		}
 	}
 
 	switch {
@@ -314,6 +322,18 @@ func cmdSetup(args []string) error {
 	default:
 		fmt.Println("root helper skipped (sudo unavailable here)")
 		fmt.Println("  finish later with: devhost setup --helper   (one-time password prompt)")
+	}
+
+	switch {
+	case noSkill:
+	case skills.Available():
+		fmt.Println("\nrefreshing the devhost agent skill (skills.sh)…")
+		if err := skills.Refresh(os.Stdout); err != nil {
+			fmt.Printf("skill refresh skipped: %v\n", err)
+		}
+	default:
+		fmt.Println("\nagent skill skipped (Node/npx not found)")
+		fmt.Printf("  install it later with: npx skills add %s\n", skills.Pkg)
 	}
 	return nil
 }
@@ -372,6 +392,24 @@ func setupPath(shimDir string, noProfile bool) {
 			fmt.Printf("  export PATH=\"%s:$PATH\"\n", d)
 		}
 	}
+}
+
+// cmdUpgrade updates the binary, then brings the paired agent skill along so
+// the two don't drift. The skill refresh is best-effort and never fails the
+// upgrade. (A Homebrew-managed binary upgrades via `brew upgrade`; the skill
+// then rides along on the next `devhost setup`, and `devhost doctor` flags it
+// meanwhile.)
+func cmdUpgrade(args []string) error {
+	if err := selfupdate.Upgrade(version, os.Stdout); err != nil {
+		return err
+	}
+	if skills.Available() {
+		fmt.Println("\nrefreshing the devhost agent skill…")
+		if err := skills.Refresh(os.Stdout); err != nil {
+			fmt.Printf("skill refresh skipped: %v\n", err)
+		}
+	}
+	return nil
 }
 
 func cmdLs(args []string) error {
@@ -510,6 +548,21 @@ func cmdDoctor(args []string) error {
 		report(true, "daemon service ("+service.Kind()+")", "")
 	} else {
 		fmt.Println("- daemon service not registered (localhost routing off; `devhost setup` registers it)")
+	}
+
+	switch {
+	case !skills.Installed() && skills.Available():
+		report(false, "agent skill (devhost)", "install it: devhost setup   (or: npx skills add "+skills.Pkg+")")
+	case !skills.Installed():
+		fmt.Println("- agent skill not installed (optional; Node/npx not found to install it)")
+	default:
+		// Installed — flag it only when we can confirm it's behind the source.
+		if outdated, err := skills.Outdated(); err == nil && outdated {
+			report(false, "agent skill (devhost) — differs from the published version",
+				"refresh it: devhost setup   (or: npx skills update "+skills.Name+")")
+		} else {
+			report(true, "agent skill (devhost)", "")
+		}
 	}
 
 	cwd, _ := os.Getwd()
