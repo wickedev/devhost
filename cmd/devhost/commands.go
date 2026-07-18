@@ -503,7 +503,7 @@ func setupPath(shimDir string, noProfile bool) {
 			}
 			for _, e := range edits {
 				if e.Added {
-					fmt.Printf("added to %s: export PATH=\"%s:$PATH\"\n", e.Profile, d)
+					fmt.Printf("added to %s: de-duped shim-dir prepend for %s\n", e.Profile, d)
 				} else {
 					fmt.Printf("%s already puts %s on PATH\n", e.Profile, d)
 				}
@@ -517,10 +517,11 @@ func setupPath(shimDir string, noProfile bool) {
 		fmt.Println("\nAdd to your shell profile, AFTER any version manager init")
 		fmt.Println("(the shim must win the PATH race, then hand off to it —")
 		fmt.Println(" zsh: put it in BOTH ~/.zshenv and ~/.zshrc so agent/script")
-		fmt.Println(" shells, which read only .zshenv, get it too):")
+		fmt.Println(" shells, which read only .zshenv, get it too; the .zshrc copy")
+		fmt.Println(" also re-fronts the dir past macOS path_helper):")
 		fmt.Println()
 		for _, d := range manual {
-			fmt.Printf("  export PATH=\"%s:$PATH\"\n", d)
+			fmt.Printf("  %s\n", strings.ReplaceAll(shim.PathLine(os.Getenv("SHELL"), d), "\n", "\n  "))
 		}
 	}
 }
@@ -686,6 +687,31 @@ func cmdDoctor(args []string) error {
 		}
 	}
 
+	// Precedence, not just presence. A tool that also lives in a system dir
+	// (make → /usr/bin/make) only routes through devhost when the shim dir wins
+	// the PATH race. macOS path_helper — run from /etc/zprofile AFTER ~/.zshenv,
+	// for login shells — refronts the system dirs, shoving the shim dir behind
+	// /usr/bin; then `make dev` bypasses devhost entirely and its dev servers
+	// bind plain loopback (colliding across checkouts). Only a re-prepend that
+	// runs after path_helper (~/.zshrc) restores order. Probe a login+interactive
+	// shell — exactly what a terminal `make dev` sees — not doctor's own PATH.
+	if shell := os.Getenv("SHELL"); shell != "" && filepath.Base(shell) != "fish" {
+		// Marker-wrap the value so any interactive-rc chatter on stdout can't
+		// corrupt the parse.
+		if out, err := exec.Command(shell, "-lic", `printf 'DHPATH=%s\n' "$PATH"`).Output(); err == nil {
+			loginPath := ""
+			for _, ln := range strings.Split(string(out), "\n") {
+				if v, ok := strings.CutPrefix(ln, "DHPATH="); ok {
+					loginPath = v
+				}
+			}
+			shimIdx, sysIdx := pathPrecedence(loginPath, shimDir)
+			ok := shimIdx >= 0 && (sysIdx < 0 || shimIdx < sysIdx)
+			report(ok, "shim dir precedes system bin dirs in login shells (make → shim, not /usr/bin/make)",
+				"macOS path_helper pushed the shim dir behind /usr/bin — rerun `devhost setup` to add the de-duped re-prepend to ~/.zshrc")
+		}
+	}
+
 	if lib, err := interpose.Ensure(); err != nil {
 		report(false, "bind() interposer", err.Error())
 	} else {
@@ -781,4 +807,22 @@ func cmdDoctor(args []string) error {
 			"run `devhost upgrade`")
 	}
 	return nil
+}
+
+// pathPrecedence returns the first index of shimDir and of the earliest
+// standard system bin dir within a colon-separated PATH (-1 when absent). The
+// shim dir must come first, or a system-name tool (make → /usr/bin/make) skips
+// the shim.
+func pathPrecedence(path, shimDir string) (shimIdx, sysIdx int) {
+	shimIdx, sysIdx = -1, -1
+	system := map[string]bool{"/usr/bin": true, "/bin": true, "/usr/sbin": true, "/sbin": true}
+	for i, d := range filepath.SplitList(path) {
+		if d == shimDir && shimIdx < 0 {
+			shimIdx = i
+		}
+		if system[d] && sysIdx < 0 {
+			sysIdx = i
+		}
+	}
+	return
 }

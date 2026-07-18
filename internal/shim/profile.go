@@ -35,10 +35,7 @@ func AppendPathToProfile(dir string) ([]PathEdit, error) {
 	if err != nil {
 		return nil, err
 	}
-	line := exportLine(dir)
-	if filepath.Base(shell) == "fish" {
-		line = fmt.Sprintf("fish_add_path --path %q", dir)
-	}
+	line := PathLine(shell, dir)
 	var edits []PathEdit
 	for _, p := range profiles {
 		added, err := appendOnce(p, line, dir, home)
@@ -147,8 +144,29 @@ func appendMarkedOnce(path, marker, line string) (added bool, err error) {
 	return err == nil, err
 }
 
-func exportLine(dir string) string {
-	return fmt.Sprintf(`export PATH="%s:$PATH"`, dir)
+// PathLine returns the shell snippet that puts dir at the FRONT of PATH for
+// the given login shell — de-dup-safe by construction. devhost writes the same
+// line to both the non-interactive rc (.zshenv) and the interactive one
+// (.zshrc): the interactive copy has to re-front the shim dir past macOS
+// path_helper, which /etc/zprofile runs AFTER .zshenv and which shoves the
+// shim dir behind /usr/bin (so `make` would resolve to /usr/bin/make and
+// `make dev` would bypass devhost entirely). A plain `export PATH="dir:$PATH"`
+// in two files re-stacked the entry on every nested shell — users deleted the
+// .zshrc copy to stop the pile-up and silently lost precedence. These forms
+// never stack, so both files can carry the line safely.
+func PathLine(shell, dir string) string {
+	switch filepath.Base(shell) {
+	case "fish":
+		return fmt.Sprintf("fish_add_path --path %q", dir) // fish_add_path de-dups + fronts
+	case "zsh":
+		// `typeset -U path` keeps the array unique, so the same line in .zshenv
+		// + .zshrc never stacks; `path=(dir $path)` re-fronts it (in .zshrc,
+		// that lands after path_helper).
+		return fmt.Sprintf("typeset -U path\npath=(%q $path)", dir)
+	default: // bash, sh
+		// Guarded prepend: add only when absent, so re-sourcing never stacks it.
+		return fmt.Sprintf(`case ":$PATH:" in *":%s:"*) ;; *) export PATH="%s:$PATH" ;; esac`, dir, dir)
+	}
 }
 
 // appendOnce appends line to the file unless the file already mentions dir
