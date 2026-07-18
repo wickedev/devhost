@@ -105,11 +105,15 @@ credential, resolves its `.devhost` project, and rewrites each published port
 onto that project's IP. Two projects can then both `-p 3000:3000` without
 colliding, exactly like host dev servers.
 
-Point Docker at the proxy once — `devhost daemon` runs it, and `devhost setup`
-prints the line:
+`devhost setup` wires this up for you: `devhost daemon` runs the proxy, and
+setup adds a **guarded** `DOCKER_HOST` export to your shell profile — it points
+Docker at the proxy only when the socket is up, and leaves an existing
+`DOCKER_HOST` untouched, so it never breaks `docker` when devhost is off
+(`--no-docker` opts out). The line it adds:
 
 ```sh
-export DOCKER_HOST="unix://$HOME/.config/devhost/docker.sock"
+[ -z "$DOCKER_HOST" ] && [ -S "$HOME/.config/devhost/docker.sock" ] && \
+  export DOCKER_HOST="unix://$HOME/.config/devhost/docker.sock"
 ```
 
 ```sh

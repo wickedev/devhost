@@ -71,9 +71,10 @@ Usage:
   devhost name [dir]        print the project's hostname label (<name>.devhost)
   devhost exec -- CMD ...   run CMD with the project environment applied
   devhost setup             one-shot machine setup: shims, PATH, daemon
-                            service (launchd/systemd), root helper, agent skill
-                            (--no-profile / --no-daemon / --no-helper /
-                            --no-skill skip parts; --daemon-remove unregisters)
+                            service (launchd/systemd), root helper, agent skill,
+                            DOCKER_HOST (--no-profile / --no-daemon /
+                            --no-helper / --no-skill / --no-docker skip parts;
+                            --daemon-remove unregisters)
   devhost setup --skill     install/refresh the agent skill (via skills.sh)
   devhost setup --helper    install the narrow root helper (one-time sudo)
   devhost setup --preload   (linux) load the interposer via /etc/ld.so.preload
